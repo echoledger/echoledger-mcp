@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "defimind-mcp"
+version = "0.1.0"
+description = "DeFiMind MCP — live Uniswap V2/V3 pool analytics over the Model Context Protocol, powered by open-source DeFiPy."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Ian C. Moore" }]
+keywords = ["mcp", "defi", "uniswap", "ethereum", "defipy", "amm"]
+
+dependencies = [
+    # Chain-reading DeFiPy: LiveProvider V2/V3 via caller-supplied RPC.
+    # Pinned to 2.1.x so the hosted tool surface can't silently shift.
+    "defipy[chain]>=2.1,<2.2",
+    # MCP Python SDK.
+    "mcp>=1.27.0",
+    # Streamable-HTTP transport mount (final choice settled in Phase 1).
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
+[project.urls]
+Homepage = "https://defimind.ai"
+Repository = "https://github.com/defimind-ai/defimind-mcp"
+Paper = "https://arxiv.org/abs/2605.11522"
+
+[tool.setuptools.packages.find]
+where = ["src"]

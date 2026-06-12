@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "DeFiMind MCP"
+message: "If you use this software, please cite it and the State Twins paper below."
+type: software
+authors:
+  - family-names: Moore
+    given-names: Ian C.
+repository-code: "https://github.com/defimind-ai/defimind-mcp"
+url: "https://defimind.ai"
+license: Apache-2.0
+version: 0.1.0
+# doi: 10.5281/zenodo.XXXXXXX   # filled in Phase 5
+references:
+  - type: article
+    title: "State Twins: An Off-Chain Substrate for Agentic Reasoning over Decentralized Finance Protocols"
+    authors:
+      - family-names: Moore
+        given-names: Ian C.
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2605.11522"
+      - type: doi
+        value: "10.48550/arXiv.2605.11522"
