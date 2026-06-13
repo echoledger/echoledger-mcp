@@ -1,0 +1,18 @@
+# Smithery deployment config — Smithery builds + hosts the container
+# (master-plan Decision 6). The same Dockerfile serves the Cloud Run
+# fallback if the image doesn't fit Smithery's free-tier limits.
+runtime: "container"
+
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+
+startCommand:
+  type: "http"
+  # Empty config schema on purpose: BYO-RPC is a per-call tool argument
+  # (rpc_url), NOT server configuration. This keeps Smithery's deploy-time
+  # tool scan secret-free and lets the 5 tools enumerate authless.
+  configSchema:
+    type: "object"
+    properties: {}
+    additionalProperties: false

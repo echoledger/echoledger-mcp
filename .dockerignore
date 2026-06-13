@@ -1,0 +1,19 @@
+# Keep the build context lean — only pyproject + src + metadata are needed.
+.venv/
+venv/
+tests/
+docs/
+.git/
+.github/
+.gitignore
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+.DS_Store
+*.rpc
+.env
+Dockerfile
+.dockerignore
