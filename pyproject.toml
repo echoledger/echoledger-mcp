@@ -23,6 +23,12 @@ dependencies = [
     "uvicorn>=0.30",
 ]
 
+[project.scripts]
+defimind-mcp = "defimind_mcp.server:run_http"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.urls]
 Homepage = "https://defimind.ai"
 Repository = "https://github.com/defimind-ai/defimind-mcp"

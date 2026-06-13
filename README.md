@@ -88,14 +88,28 @@ now pointed at real pools. **The math is open; the reports are paid.**
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-_(Server entry point and local run/test commands land in Phase 1.)_
-
-Verify locally with the MCP inspector:
+Run the server over streamable HTTP (binds to `$PORT`, default 8080):
 ```bash
-npx @modelcontextprotocol/inspector <local-endpoint>
+PORT=8080 python -m defimind_mcp.server      # endpoint at http://localhost:8080/mcp
+```
+
+Or over stdio for a local MCP Inspector smoke-test:
+```bash
+python -m defimind_mcp.server --stdio
+npx @modelcontextprotocol/inspector python -m defimind_mcp.server --stdio
+```
+
+Tests (offline — fake provider + real twin/primitives):
+```bash
+pytest tests/
+```
+
+Live-RPC gate (real mainnet V2 + V3 pools; needs your own RPC):
+```bash
+DEFIMIND_TEST_RPC_URL="https://eth-mainnet.example/v2/<key>" pytest tests/test_live.py -v
 ```
 
 ## License
