@@ -13,9 +13,11 @@ DEFIMIND_TEST_RPC_URL is set.
 
 import asyncio
 import json
+import math
 
 import pytest
 
+from defipy.twin import StateTwinBuilder
 from defipy.twin.snapshot import V2PoolSnapshot, V3PoolSnapshot
 from defimind_mcp import server
 
@@ -171,6 +173,128 @@ def test_block_number_passed_to_snapshot(patch_provider):
         "pool_type": "uniswap_v2", "block_number": 19_500_000,
     })
     assert fake.calls[0][1] == {"block_number": 19_500_000}
+
+
+# ─── Task A: dispatch coverage for the 3 previously-uninvoked tools ──────────
+# AnalyzePosition / SimulatePriceMove / DetectRugSignals were enumeration-only.
+# Invoke each through real dispatch + real builder + real primitive (V2 and V3
+# where ticks apply) and assert the primitive's key output fields.
+
+# Position basis consistent with the synthetic reserves (token0:token1 = 2000:1).
+_POS = {"lp_init_amt": 100.0, "entry_x_amt": 4000.0, "entry_y_amt": 2.0}
+
+
+def test_analyze_position_v2(patch_provider):
+    patch_provider(_v2_snap())
+    out = json.loads(_text(_call("AnalyzePosition", {
+        "pool_address": USDC_WETH_V2, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v2", **_POS})))
+    assert isinstance(out["net_pnl"], (int, float))
+    assert isinstance(out["il_percentage"], (int, float))
+    assert out["diagnosis"] in {"net_positive", "fee_compensated", "il_dominant"}
+
+
+def test_analyze_position_v3(patch_provider):
+    # V3 with no caller ticks: dispatch defaults to the snapshot full range.
+    patch_provider(_v3_snap())
+    out = json.loads(_text(_call("AnalyzePosition", {
+        "pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v3", **_POS})))
+    assert isinstance(out["net_pnl"], (int, float))
+    assert isinstance(out["il_percentage"], (int, float))
+    assert out["diagnosis"] in {"net_positive", "fee_compensated", "il_dominant"}
+
+
+def test_simulate_price_move_v2_anchors_to_il_formula(patch_provider):
+    patch_provider(_v2_snap())
+    out = json.loads(_text(_call("SimulatePriceMove", {
+        "pool_address": USDC_WETH_V2, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v2", "price_change_pct": 0.30,
+        "position_size_lp": 100.0})))
+    assert isinstance(out["new_value"], (int, float))
+    assert isinstance(out["value_change_pct"], (int, float))
+    # Absolute parity anchor: V2 IL is the classic 2*sqrt(a)/(1+a)-1 closed
+    # form. For a +30% move (alpha=1.30) that is ~-0.0085431.
+    expected = 2 * math.sqrt(1.30) / (1 + 1.30) - 1
+    assert out["il_at_new_price"] == pytest.approx(expected, abs=1e-6)
+
+
+def test_simulate_price_move_v3(patch_provider):
+    # V3 full-range default path produces a coherent scenario.
+    patch_provider(_v3_snap())
+    out = json.loads(_text(_call("SimulatePriceMove", {
+        "pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v3", "price_change_pct": 0.30,
+        "position_size_lp": 100.0})))
+    assert isinstance(out["new_value"], (int, float))
+    assert isinstance(out["il_at_new_price"], (int, float))
+    assert isinstance(out["value_change_pct"], (int, float))
+    assert out["il_at_new_price"] <= 0.0  # IL is a loss for any alpha != 1
+
+
+def test_detect_rug_signals_v2(patch_provider):
+    patch_provider(_v2_snap())
+    out = json.loads(_text(_call("DetectRugSignals", {
+        "pool_address": USDC_WETH_V2, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v2"})))
+    assert out["risk_level"] in {"low", "medium", "high", "critical"}
+    assert isinstance(out["signals_detected"], int)
+    assert 0 <= out["signals_detected"] <= 3
+
+
+def test_detect_rug_signals_v3(patch_provider):
+    patch_provider(_v3_snap())
+    out = json.loads(_text(_call("DetectRugSignals", {
+        "pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v3"})))
+    assert out["risk_level"] in {"low", "medium", "high", "critical"}
+    assert isinstance(out["signals_detected"], int)
+
+
+# ─── Task B: V3 concentrated-liquidity IL differential (the diagnostic) ──────
+
+
+def test_v3_il_differential_tight_vs_full(patch_provider):
+    """A narrow tick band must amplify IL for a given move vs full range.
+
+    Proves caller-supplied lwr_tick/upr_tick actually reach the V3 IL math
+    (UniswapImpLoss.calc_price_range -> scale = sqrt(r)/(sqrt(r)-1)).
+    Diagnostic: if TIGHT does not materially exceed FULL, the ticks aren't
+    engaging the concentrated-IL path — a real bug, not a test to relax.
+    """
+    snap = _v3_snap()
+    # Read the built twin's current tick so the band straddles current price.
+    cur_tick = StateTwinBuilder().build(snap).slot0.tick
+    patch_provider(snap)
+
+    base = {"pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+            "pool_type": "uniswap_v3", "price_change_pct": 0.30,
+            "position_size_lp": 100.0}
+
+    full = json.loads(_text(_call("SimulatePriceMove", dict(base))))
+
+    # Tight band: +/-4000 ticks around current, snapped to spacing 10. The
+    # +30% move is ~2624 ticks, so the post-move price stays inside the band.
+    sp = 10
+    lwr = ((cur_tick - 4000) // sp) * sp
+    upr = ((cur_tick + 4000) // sp) * sp
+    tight = json.loads(_text(_call("SimulatePriceMove",
+                       {**base, "lwr_tick": lwr, "upr_tick": upr})))
+
+    il_full = abs(full["il_at_new_price"])
+    il_tight = abs(tight["il_at_new_price"])
+
+    # Concentrated liquidity amplifies IL. Observed ~26x; require a clear
+    # multiple (>3x), not a rounding-level difference.
+    assert il_tight > 3 * il_full, (
+        "tight-band IL must materially exceed full-range IL; "
+        "got tight={} full={}".format(
+            tight["il_at_new_price"], full["il_at_new_price"]))
+
+    # Full-range V3 collapses to the V2 closed-form IL for this move — the
+    # scale factor goes to ~1 when the band spans the whole price axis.
+    expected_v2 = abs(2 * math.sqrt(1.30) / (1 + 1.30) - 1)
+    assert il_full == pytest.approx(expected_v2, abs=1e-6)
 
 
 # ─── Error paths ────────────────────────────────────────────────────────────
