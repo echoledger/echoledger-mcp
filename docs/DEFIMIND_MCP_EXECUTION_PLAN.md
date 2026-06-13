@@ -138,7 +138,8 @@ Re-voice the defipy catalog copy for the DeFiMind front-door framing (Decision 4
 **Gate:** Live on the official registry (resolvable via its search API) and on Smithery; submitted to mcpmarket and mcp.so; the `server.json` committed to repo root and the canonical listing copy committed to `defimind-mcp/docs/` for reuse.
 
 ### Phase 5 — Citable artifact (Zenodo DOI)
-**Goal:** Cut a tagged release, mint a Zenodo DOI with the State Twins paper (arXiv 2605.11522) as the linked citation, and finalize `CITATION.cff` with the DOI so GitHub's "Cite this repository" resolves. This is the lever that turns the endpoint from a listing into a Scholar-visible artifact pointing back at the paper.
+**Goal:** Cut a tagged release, mint a Zenodo DOI with the State Twins paper (arXiv 2605.11522) as the linked citation, and finalize `CITATION.cff` with the DOI so GitHub's "Cite this repository" resolves. This gives the endpoint a persistent, citable identifier linked back to the paper.
+> **Correction (2026-06-13): Zenodo is NOT Google-Scholar-indexed** ([Zenodo FAQ](https://support.zenodo.org/help/en-gb/18-general/61-is-zenodo-indexed-by-google-scholar) — Scholar indexes article text only). The original "Scholar-visible artifact" claim is dropped. The DOI delivers citability, archival permanence, GitHub "Cite this repository", and DataCite/OpenAIRE + Google *Dataset* Search indexing. Scholar visibility rides on the **arXiv paper** (already indexed) via repo↔paper cross-referencing; a Scholar-indexed citation for the software itself would need a **JOSS** paper (deferred).
 **Gate:** DOI minted and live; `CITATION.cff` carries both arXiv and Zenodo; "Cite this repository" renders on GitHub.
 
 ---

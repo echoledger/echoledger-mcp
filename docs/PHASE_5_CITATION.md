@@ -2,7 +2,9 @@
 
 *defimind-mcp v0.1 build. Master plan: `DEFIMIND_MCP_EXECUTION_PLAN.md`. Execute via Claude Code.*
 
-**Objective:** Turn the endpoint into a Scholar-visible, citable artifact: a tagged release + a Zenodo DOI that cites the State Twins paper, with `CITATION.cff` finalized. This is the lever that points the listing back at the paper and drives citations.
+**Objective:** Turn the endpoint into a **citable, archived artifact**: a tagged release + a Zenodo DOI that links to the State Twins paper, with `CITATION.cff` finalized. This gives the repo a persistent identifier, GitHub "Cite this repository", DataCite/OpenAIRE indexing, and a formal provenance link from the software back to the paper.
+
+> **Correction (2026-06-13): Zenodo is NOT Google-Scholar-indexed.** Per [Zenodo's FAQ](https://support.zenodo.org/help/en-gb/18-general/61-is-zenodo-indexed-by-google-scholar), Scholar only indexes article *text*; software/dataset DOIs are out of scope. So the earlier "Scholar-visible artifact" framing is wrong and is dropped. What the DOI actually buys: citability, archival permanence, GitHub "Cite this repository", DataCite/OpenAIRE citation graphs, and Google *Dataset* Search (which does index Zenodo). **Scholar visibility comes from the arXiv paper** (2605.11522, already indexed) — so the cheap real lever is making the paper and the repo cross-reference each other. A genuine Scholar-indexed citation for the *software itself* would require a **JOSS** paper (separate, heavier effort — out of scope for v0.1).
 
 **Preconditions:** Phase 4 published (server live on the official registry).
 
