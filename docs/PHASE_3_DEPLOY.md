@@ -6,6 +6,12 @@
 
 **Preconditions:** working container (Phase 2), including a valid `smithery.yaml`.
 
+> **Status — executed 2026-06-13 (reality differs from the plan below).** v0.1 deployed **directly to Railway at `https://mcp.defimind.ai`** (Cloudflare-fronted) — i.e. the "Upgrade path" own-domain host was taken at launch rather than Smithery-hosted. Rationale: the branded domain + full control were wanted up front, and Railway built the heavy Python container without the free-tier-fit concern Smithery raised.
+> - Gate **met**: `/mcp` enumerates **5 tools** authless and live **V2 + V3** calls (incl. a V3 concentrated-range case showing ~26× IL amplification) work end-to-end through the hosted URL.
+> - One deploy-time fix landed: `/mcp` 307-redirected to `http://…/mcp/` behind the TLS proxy; fixed by mounting the MCP handler at root + trusting proxy headers (commit `ed4a730`). `curl -i https://mcp.defimind.ai/mcp` now returns a direct 406 (correct — client must send `Accept: text/event-stream`), no redirect, https preserved.
+> - **Smithery *listing* not done here** — it moves to Phase 4 as an aggregator submission. `smithery.yaml` + `Dockerfile` stay valid for a future Smithery listing or the Cloud Run fallback image.
+> - **Hosted URL for Phase 4 `server.json` `remotes`:** `https://mcp.defimind.ai/mcp`.
+
 ## Decision 6 — settled: Smithery-hosted for v0.1
 Rationale: the heavy Python container can't use the cheap Workers path ar-mcp uses, so self-hosting means paying for an always-on box (~$4–6/mo on Railway, billed even at idle) for an endpoint nobody's discovered yet. Smithery-hosted is ~$0 at idle and zero-ops, and every asset with brand/citation value (repo, `io.github.defimind-ai` namespace, Zenodo DOI) stays host-independent. The branded `mcp.defimind.ai` URL is deferred to the post-traction migration (see "Upgrade path").
 

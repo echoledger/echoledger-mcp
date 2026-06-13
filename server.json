@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.defimind-ai/defimind-mcp",
+  "title": "DeFiMind",
+  "description": "Live Uniswap V2/V3 LP analytics — position PnL, price scenarios, pool health, rug signals, slippage.",
+  "repository": {
+    "url": "https://github.com/defimind-ai/defimind-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "websiteUrl": "https://defimind.ai",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.defimind.ai/mcp"
+    }
+  ]
+}
