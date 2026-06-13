@@ -148,6 +148,22 @@ def test_calculate_slippage_v2_resolves_token(patch_provider):
     assert "slippage_pct" in payload
 
 
+def test_calculate_slippage_v3_defaults_ticks(patch_provider):
+    # V3 slippage with no caller ticks must not break: dispatch defaults
+    # lwr_tick/upr_tick to the snapshot's full range before the primitive.
+    snap = _v3_snap()
+    patch_provider(snap)
+    out = _call("CalculateSlippage", {
+        "pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v3", "amount_in": 1000.0,
+        "token_in_name": "USDC",
+    })
+    payload = json.loads(_text(out))
+    assert "slippage_pct" in payload
+    # Sanity: snapshot carries concrete full-range ticks to default from.
+    assert snap.lwr_tick is not None and snap.upr_tick is not None
+
+
 def test_block_number_passed_to_snapshot(patch_provider):
     fake = patch_provider(_v2_snap())
     _call("CheckPoolHealth", {

@@ -43,10 +43,12 @@ The V3 twin is built from a **full-range active-liquidity** snapshot
 (the LiveProvider default). Caller-supplied `lwr_tick`/`upr_tick` are
 *position*-range arguments passed straight to the primitive — they
 describe the position being analyzed, not a re-scoping of the pool
-snapshot. Concentrated-liquidity reads beyond the active range
-(tick-bitmap walking) are deferred upstream to DeFiPy (active-liquidity
-only). So V3 position analysis assumes the supplied range against a
-full-range twin.
+snapshot. When the caller omits them on a V3 tool that accepts them,
+they default to the snapshot's full range (so V3 slippage/position
+calls work out of the box at full range). Concentrated-liquidity reads
+beyond the active range (tick-bitmap walking) are deferred upstream to
+DeFiPy (active-liquidity only). So V3 position analysis assumes the
+supplied range against a full-range twin.
 """
 
 import contextlib
@@ -406,6 +408,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return _err(name, pool_ref, arguments, t0, type(e).__name__,
                             _scrub_secrets(str(e), rpc_url),
                             prefix="Error resolving token")
+
+    # V3 full-range default. The position/slippage primitives take
+    # lwr_tick/upr_tick and feed them into V3 tick math that can't accept
+    # None. When the caller omits them, default to the snapshot's range —
+    # which is the pool's full active-liquidity range (the documented V3
+    # default). Only applied to tools that actually accept ticks, so
+    # pool-level tools (CheckPoolHealth/DetectRugSignals) are untouched.
+    if pool_type == "uniswap_v3":
+        sig = TOOL_REGISTRY[name].signature_params
+        for tick in ("lwr_tick", "upr_tick"):
+            if tick in sig and primitive_args.get(tick) is None:
+                primitive_args[tick] = getattr(snap, tick, None)
 
     # Invoke the primitive.
     try:
