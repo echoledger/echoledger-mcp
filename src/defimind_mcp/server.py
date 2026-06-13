@@ -439,7 +439,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def build_server() -> Server:
     """Configure the low-level MCP server with list_tools + call_tool."""
-    server = Server("defimind")
+    server = Server("defimind", version="0.1.0")
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
