@@ -460,7 +460,17 @@ def build_server() -> Server:
 
 
 def create_app():
-    """Build the streamable-HTTP ASGI app mounting the MCP server at /mcp."""
+    """Build the streamable-HTTP ASGI app serving the MCP endpoint at /mcp.
+
+    The MCP session manager is mounted at the root ("/"), not at "/mcp".
+    A `Mount("/mcp", ...)` makes Starlette 307-redirect a bare `/mcp` to
+    `/mcp/`; behind a TLS-terminating proxy (Railway/Cloudflare) that
+    Location also downgrades to http://, which can fail Smithery's scan
+    and break strict clients. Mounting at root means `/mcp` (and `/mcp/`)
+    reach the session manager directly with no redirect — the manager
+    handles the MCP protocol independent of path. `/health` is matched
+    first, so it stays a plain JSON route.
+    """
     from starlette.applications import Starlette
     from starlette.routing import Mount, Route
     from starlette.responses import JSONResponse
@@ -484,7 +494,7 @@ def create_app():
     app = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Mount("/mcp", app=handle_mcp),
+            Mount("/", app=handle_mcp),
         ],
         lifespan=lifespan,
     )
@@ -502,7 +512,10 @@ def run_http():
     import uvicorn
     port = int(os.environ.get("PORT", "8080"))
     host = os.environ.get("HOST", "0.0.0.0")
-    uvicorn.run(create_app(), host=host, port=port)
+    # Trust X-Forwarded-* from the TLS-terminating proxy (Railway/Cloudflare)
+    # so the app sees scheme=https and never builds http:// redirect URLs.
+    uvicorn.run(create_app(), host=host, port=port,
+                proxy_headers=True, forwarded_allow_ips="*")
 
 
 async def run_stdio():

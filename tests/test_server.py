@@ -384,3 +384,28 @@ def test_rpc_url_redacted_in_receipt(patch_provider, capsys):
     err = capsys.readouterr().err
     assert "SECRET_KEY" not in err
     assert "<redacted>" in err
+
+
+# ─── HTTP routing: /mcp must serve directly, no 307 redirect ─────────────────
+
+
+def test_mcp_endpoint_does_not_redirect():
+    """`/mcp` must be answered by the app directly, not 307-redirected to
+    `/mcp/` (which behind a TLS proxy also downgrades the Location to http://
+    and can fail Smithery's scan). Offline routing assertion — no network."""
+    from starlette.testclient import TestClient
+
+    with TestClient(server.create_app()) as client:
+        # Accept: application/json (NOT text/event-stream) so the MCP manager
+        # returns a fast 406 rather than opening a standing SSE stream.
+        r = client.get("/mcp", headers={"accept": "application/json"},
+                       follow_redirects=False)
+        assert not (300 <= r.status_code < 400), (
+            "/mcp must serve directly; got redirect {} -> {}".format(
+                r.status_code, r.headers.get("location", "?")))
+        assert r.status_code == 406  # reached the MCP session manager
+
+        # /health is matched ahead of the root mount and still works.
+        h = client.get("/health")
+        assert h.status_code == 200
+        assert h.json()["status"] == "ok"
