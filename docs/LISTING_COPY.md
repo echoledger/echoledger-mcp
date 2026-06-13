@@ -88,3 +88,60 @@ DeFiPy 2.2 ships their live providers.
   exact-math depth and live concentrated-liquidity analysis, not exclusivity.
 - Avoid bare **"unique"** — always pair with a specific axis (exact math,
   primitive composition, open-substrate framing).
+
+---
+
+## Ready-to-submit aggregator entries (Phase 4 Tier-2)
+
+*As of publish, DeFiMind was not yet auto-ingested by mcp.so / mcpmarket from
+the official registry — these are for manual submission. Re-check each site
+for an existing entry before submitting (registry ingestion may land first).
+Positioning angle: existing Uniswap MCP servers are execution/trading or
+raw-price bots; DeFiMind is **read-only exact-math LP analytics** — a distinct
+niche. Lead with that.*
+
+### awesome-mcp-servers (GitHub PR)
+
+Target repo: `punkpeye/awesome-mcp-servers` (most-starred; mirror to
+`wong2/awesome-mcp-servers` / `appcypher/awesome-mcp-servers` as desired).
+Place under the **Finance / Fintech** (or Cryptocurrency) category,
+alphabetical. House format is `- [name](url) <lang> <scope> - desc.`
+Legend: 🐍 Python · ☁️ Cloud/remote service.
+
+```markdown
+- [defimind-ai/defimind-mcp](https://github.com/defimind-ai/defimind-mcp) 🐍 ☁️ - Live Uniswap V2/V3 LP analytics over MCP — position PnL, price-move scenarios, pool health, rug signals, and slippage. Read-only, bring-your-own-RPC, exact AMM math (powered by open-source DeFiPy).
+```
+
+PR title: `Add DeFiMind (live Uniswap V2/V3 LP analytics)`
+
+### mcpmarket.com (self-serve form)
+
+| Field | Value |
+|---|---|
+| Name | `DeFiMind` |
+| Slug | `defimind` |
+| Category | DeFi / Finance / Crypto |
+| Short description | Live Uniswap V2/V3 LP analytics — position PnL, price scenarios, pool health, rug signals, slippage. |
+| Server / endpoint URL | `https://mcp.defimind.ai/mcp` (streamable-HTTP, authless) |
+| Repository | `https://github.com/defimind-ai/defimind-mcp` |
+| Homepage | `https://defimind.ai` |
+| Install (Claude Code) | `claude mcp add --transport http defimind https://mcp.defimind.ai/mcp` |
+| Tags | `defi`, `uniswap`, `ethereum`, `amm`, `analytics`, `read-only` |
+| Long description | Use the "Long description" block above. |
+
+### mcp.so (submit flow)
+
+| Field | Value |
+|---|---|
+| Name | `DeFiMind` |
+| GitHub URL | `https://github.com/defimind-ai/defimind-mcp` |
+| Endpoint | `https://mcp.defimind.ai/mcp` |
+| Description | Use the Short + Long description blocks above. |
+
+*mcp.so may auto-ingest from the official registry — check for an existing
+`io.github.defimind-ai/defimind-mcp` entry before submitting.*
+
+### FlowHunt / SERP AI (low priority, account-gated)
+
+Low-stakes, compounding. Use the Name + Short description + endpoint +
+repo above. Submit only after the higher-signal targets are done.
