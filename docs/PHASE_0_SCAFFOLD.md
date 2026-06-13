@@ -9,7 +9,7 @@
 ## Settled decisions (from master plan)
 - **License:** Apache-2.0 — already present; matches the defipy code being lifted.
 - **Registry namespace:** `io.github.defimind-ai/defimind-mcp`.
-- **Hosting:** self-host + remote-list (ar-mcp pattern); assumed **Railway** (confirm in Phase 3).
+- **Hosting:** Smithery-hosted (Decision 6); Cloud Run fallback if the container doesn't fit the free tier. Endpoint URL is captured in Phase 3 — keep README host-agnostic until then.
 - **v0.1 scope:** 5 live Uniswap V2/V3 tools, BYO-RPC supplied per tool call (endpoint stays authless).
 
 ## Steps
