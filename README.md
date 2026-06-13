@@ -9,33 +9,34 @@ RPC; the endpoint itself is authless.
 [![MCP](https://img.shields.io/badge/MCP-streamable--http-6ea8ff)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776ab)](https://www.python.org)
 [![arXiv](https://img.shields.io/badge/arXiv-2605.11522-b31b1b.svg)](https://arxiv.org/abs/2605.11522)
+[![smithery badge](https://smithery.ai/badge/ic3moore/defimind)](https://smithery.ai/servers/ic3moore/defimind)
 
-Endpoint: **TBD** _(captured in Phase 3 once the endpoint is deployed; the
-branded `mcp.defimind.ai` URL is a post-traction migration)._
+Endpoint: **`https://mcp.defimind.ai/mcp`** (streamable-HTTP, authless).
 
 ## Install
 
-> The endpoint URL below is a placeholder until Phase 3. Tool details are
-> finalized in Phase 1.
-
 ### Claude Desktop
 Settings → Integrations → Add server.
-URL: `<endpoint-url>`
+URL: `https://mcp.defimind.ai/mcp`
 
 ### Claude Code
 ```bash
-claude mcp add --transport http defimind <endpoint-url>
+claude mcp add --transport http defimind https://mcp.defimind.ai/mcp
 ```
 
 ### Cursor
 Settings → MCP → Add new MCP server.
-Name: `defimind` · Type: `http` · URL: `<endpoint-url>`
+Name: `defimind` · Type: `http` · URL: `https://mcp.defimind.ai/mcp`
+
+### Smithery
+Listed at [smithery.ai/servers/ic3moore/defimind](https://smithery.ai/servers/ic3moore/defimind) — connect via the Smithery gateway from any supported client.
 
 ## Tools
 
 v0.1 ships **5 tools** over Uniswap V2/V3, reading live pool state. Each
-call takes an RPC URL and a pool address — nothing is stored. _(Schemas
-and exact argument shapes are finalized in Phase 1.)_
+call takes `pool_address`, `rpc_url`, and `pool_type`
+(`uniswap_v2` | `uniswap_v3`), plus optional `chain_id` guard and
+`block_number` pin — nothing is stored.
 
 ### `AnalyzePosition`
 PnL decomposition for an LP position — impermanent loss, fees, and net.
@@ -78,9 +79,6 @@ now pointed at real pools. **The math is open; the reports are paid.**
 
 - **v0.2 — Balancer & Stableswap live reads**, once DeFiPy 2.2 ships
   their LiveProviders.
-- **Own-domain migration** — redeploy the same image to
-  `mcp.defimind.ai` when traction justifies it (a redeploy, not a
-  rewrite).
 - **Distribution polish** — OCI-package listing, DNS-verified namespace,
   and OIDC auto-publish.
 
