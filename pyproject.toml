@@ -17,7 +17,10 @@ dependencies = [
     # caller-supplied RPC. Pinned to the 2.2.x line so the hosted tool
     # surface can't silently shift; lifted from <2.2 to ship the Balancer
     # & Stableswap LiveProviders (the v0.2 surface expansion, 5 -> 10 tools).
-    "defipy[chain]>=2.2,<2.3",
+    # Floor at 2.2.1 for the DetectRugSignals live-snapshot fix (2.2.0
+    # false-flagged healthy live pools as "high" risk); also busts the
+    # Docker dep-layer cache so a redeploy actually pulls 2.2.1.
+    "defipy[chain]>=2.2.1,<2.3",
     # MCP Python SDK.
     "mcp>=1.27.0",
     # Streamable-HTTP transport mount (final choice settled in Phase 1).
