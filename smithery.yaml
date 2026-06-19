@@ -11,7 +11,7 @@ startCommand:
   type: "http"
   # Empty config schema on purpose: BYO-RPC is a per-call tool argument
   # (rpc_url), NOT server configuration. This keeps Smithery's deploy-time
-  # tool scan secret-free and lets the 5 tools enumerate authless.
+  # tool scan secret-free and lets all 10 tools enumerate authless.
   configSchema:
     type: "object"
     properties: {}

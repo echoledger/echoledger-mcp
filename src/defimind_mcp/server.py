@@ -18,18 +18,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DeFiMind MCP server — 5 live Uniswap V2/V3 analytics tools over HTTP.
+"""DeFiMind MCP server — 10 live LP analytics tools over HTTP.
 
-Lifted and adapted from DeFiPy's stdio MockProvider MCP server. Four
-changes from that source:
+Covers Uniswap V2/V3, Balancer V2 weighted (2-asset), and Curve plain
+Stableswap (2-asset) pools. Lifted and adapted from DeFiPy's stdio
+MockProvider MCP server. Four changes from that source:
 
-  1. Subset to the 5 V2/V3-LiveProvider-compatible tools.
+  1. Subset to the 10 LiveProvider-compatible tools (the full curated
+     DeFiPy registry: 5 Uniswap V2/V3 tools + 3 Balancer/Stableswap
+     position tools + Balancer/Stableswap price-move + depeg-risk).
   2. Input model: a recipe `pool_id` enum is replaced with live pool
      identity — `pool_address`, `rpc_url` (caller's, BYO-RPC),
-     `pool_type` (uniswap_v2 | uniswap_v3), and optional `chain_id`
-     guard + `block_number` pin.
+     `pool_type` (uniswap_v2 | uniswap_v3 | balancer | stableswap), and
+     optional `chain_id` guard + `block_number` pin.
   3. Provider: MockProvider recipes → `LiveProvider(rpc_url).snapshot()`.
   4. Transport: stdio → streamable HTTP (CORS, bound to $PORT).
+
+Protocol scope (honest limits, surfaced in the tool descriptions):
+the Balancer tools handle 2-asset weighted pools (3-asset raises
+upstream); the Stableswap tools handle 2-asset plain Curve pools
+(rate-bearing pools — metapools, LSD — are upstream v2.3). A
+`balancer`/`stableswap` tool pointed at an out-of-scope pool fails
+cleanly (the upstream snapshot/primitive raises; dispatch scrubs the
+RPC from the message and returns a structured error, never a stack
+trace). Per-tool protocol gating (`_TOOL_POOL_TYPES`) rejects an
+obvious mismatch — e.g. AssessDepegRisk on a uniswap_v2 pool — before
+any chain read.
 
 Statelessness is preserved exactly: a fresh `LiveProvider` + twin is
 built per call; nothing is cached or held between requests. One JSON
@@ -69,18 +83,46 @@ from defipy.twin import LiveProvider, StateTwinBuilder
 
 # ─── Tool subset + dispatch config ───────────────────────────────────────────
 
-# The 5 tools that compose with the V2/V3 LiveProvider. Balancer and
-# Stableswap tools return in v0.2 once DeFiPy 2.2 ships their providers.
+# The full 10-tool curated DeFiPy registry, all composing with the
+# LiveProvider. The first 5 are Uniswap V2/V3; the last 5 are the
+# Balancer/Stableswap tools that DeFiPy 2.2 unblocked (v0.2 surface
+# expansion). This must equal the DeFiPy registry's curated set.
 TOOL_NAMES = (
     "AnalyzePosition",
     "SimulatePriceMove",
     "CheckPoolHealth",
     "DetectRugSignals",
     "CalculateSlippage",
+    "AnalyzeBalancerPosition",
+    "SimulateBalancerPriceMove",
+    "AnalyzeStableswapPosition",
+    "SimulateStableswapPriceMove",
+    "AssessDepegRisk",
 )
 
 # Supported live pool types (LiveProvider pool_id protocol prefixes).
-POOL_TYPES = ("uniswap_v2", "uniswap_v3")
+# Each must match a DeFiPy 2.2 LiveProvider prefix exactly — the dispatch
+# builds the snapshot id as "{pool_type}:{pool_address}".
+POOL_TYPES = ("uniswap_v2", "uniswap_v3", "balancer", "stableswap")
+
+# Per-tool protocol gating. Each tool is protocol-specific: the Uniswap
+# tools only make sense on uniswap_v2/v3, the Balancer tools on balancer,
+# the Stableswap tools on stableswap. A tool+pool_type mismatch is
+# rejected with a clean IncompatiblePoolType error before any chain read
+# (mirrors the MockProvider server's _COMPATIBLE_RECIPES gate, keyed by
+# pool_type family instead of recipe name).
+_TOOL_POOL_TYPES = {
+    "AnalyzePosition":             {"uniswap_v2", "uniswap_v3"},
+    "SimulatePriceMove":          {"uniswap_v2", "uniswap_v3"},
+    "CheckPoolHealth":            {"uniswap_v2", "uniswap_v3"},
+    "DetectRugSignals":           {"uniswap_v2", "uniswap_v3"},
+    "CalculateSlippage":          {"uniswap_v2", "uniswap_v3"},
+    "AnalyzeBalancerPosition":    {"balancer"},
+    "SimulateBalancerPriceMove":  {"balancer"},
+    "AnalyzeStableswapPosition":  {"stableswap"},
+    "SimulateStableswapPriceMove": {"stableswap"},
+    "AssessDepegRisk":            {"stableswap"},
+}
 
 # Args consumed by the dispatch layer to build the live twin. Stripped
 # from the LLM's arguments before the primitive is invoked.
@@ -89,10 +131,21 @@ IDENTITY_KEYS = frozenset(
 )
 
 # Tools with an ERC20 parameter the LLM specifies as a token-name string.
-# Maps tool name → (schema-arg-name, primitive-arg-name).
+# Maps tool name → (schema-arg-name, primitive-arg-name). The named token
+# is resolved to an ERC20 at dispatch time via _resolve_token.
+#   - CalculateSlippage.token_in_name is REQUIRED (which token is bought).
+#   - AssessDepegRisk.depeg_token_name is OPTIONAL: which asset is assumed
+#     to depeg; when omitted, dispatch defaults it to the pool's first
+#     token so the tool works out of the box (see call_tool). The upstream
+#     primitive requires a depeg_token ERC20, but the registry schema
+#     leaves it dispatch-supplied (required = ["lp_init_amt"]).
 _TOKEN_ARG_RENAMES = {
     "CalculateSlippage": ("token_in_name", "token_in"),
+    "AssessDepegRisk": ("depeg_token_name", "depeg_token"),
 }
+
+# Renamed token args that are required of the LLM (vs. dispatch-defaulted).
+_REQUIRED_TOKEN_ARGS = frozenset({"CalculateSlippage"})
 
 _BUILDER = StateTwinBuilder()
 
@@ -108,8 +161,9 @@ def _make_provider(rpc_url: str):
 
 
 def _wrap_schemas_with_pool_identity() -> list[dict]:
-    """Subset to the 5 tools and inject live pool-identity fields onto each
-    tool's inputSchema, replacing the MockProvider recipe `pool_id` enum."""
+    """Subset to the 10 registry tools and inject live pool-identity fields
+    onto each tool's inputSchema, replacing the MockProvider recipe
+    `pool_id` enum."""
     wrapped = []
     for s in get_schemas("mcp"):
         if s["name"] not in TOOL_NAMES:
@@ -122,7 +176,8 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
         props["pool_address"] = {
             "type": "string",
             "description": (
-                "On-chain address of the Uniswap pool/pair to analyze. "
+                "On-chain address of the pool/pair to analyze (Uniswap V2/V3 "
+                "pair, Balancer weighted pool, or Curve stableswap pool). "
                 "Required. Lowercase, uppercase, or checksum casing all work."
             ),
         }
@@ -139,8 +194,12 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
             "type": "string",
             "enum": list(POOL_TYPES),
             "description": (
-                "Which Uniswap protocol the pool address belongs to: "
-                "'uniswap_v2' or 'uniswap_v3'."
+                "Which protocol the pool address belongs to: 'uniswap_v2' | "
+                "'uniswap_v3' | 'balancer' (2-asset weighted pool) | "
+                "'stableswap' (2-asset plain Curve pool). Must match the tool: "
+                "the position/price/health/rug/slippage Uniswap tools take "
+                "uniswap_v2|uniswap_v3; the Balancer tools take balancer; the "
+                "Stableswap/depeg tools take stableswap."
             ),
         }
         props["chain_id"] = {
@@ -162,17 +221,24 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
             if key not in required:
                 required.append(key)
 
-        # CalculateSlippage exposes its ERC20 token_in as a token-name string.
+        # Tools with an ERC20 parameter exposed to the LLM as a token-name
+        # string. CalculateSlippage.token_in_name is required; AssessDepegRisk
+        # .depeg_token_name is optional (defaults to the pool's first token).
         if tool_name in _TOKEN_ARG_RENAMES:
             schema_name, _primitive_name = _TOKEN_ARG_RENAMES[tool_name]
-            props[schema_name] = {
-                "type": "string",
-                "description": (
+            if tool_name == "AssessDepegRisk":
+                desc = (
+                    "Optional. Symbol of the asset assumed to depeg (e.g. "
+                    "'USDC', 'DAI'). Must be one of the two tokens in the "
+                    "pool. If omitted, the pool's first token is used."
+                )
+            else:
+                desc = (
                     "Symbol of the input token for the trade (e.g. 'USDC', "
                     "'WETH'). Must be one of the two tokens in the pool."
-                ),
-            }
-            if schema_name not in required:
+                )
+            props[schema_name] = {"type": "string", "description": desc}
+            if tool_name in _REQUIRED_TOKEN_ARGS and schema_name not in required:
                 required.append(schema_name)
 
         wrapped.append(w)
@@ -308,6 +374,33 @@ _SUMMARIZERS = {
             _fmt_opt(r.max_size_at_1pct, ".2f")
         )
     ),
+    "AnalyzeBalancerPosition": lambda r: (
+        "diagnosis={}, net_pnl={}, alpha={}".format(
+            r.diagnosis, _fmt_opt(r.net_pnl), _fmt_opt(r.alpha)
+        )
+    ),
+    "SimulateBalancerPriceMove": lambda r: (
+        "new_value={}, il={}, new_price_ratio={}".format(
+            _fmt_opt(r.new_value), _fmt_opt(r.il_at_new_price),
+            _fmt_opt(r.new_price_ratio)
+        )
+    ),
+    "AnalyzeStableswapPosition": lambda r: (
+        "diagnosis={}, il_pct={}, alpha={}".format(
+            r.diagnosis, _fmt_opt(r.il_percentage), _fmt_opt(r.alpha)
+        )
+    ),
+    "SimulateStableswapPriceMove": lambda r: (
+        "new_value={}, il={}, new_price_ratio={}".format(
+            _fmt_opt(r.new_value), _fmt_opt(r.il_at_new_price),
+            _fmt_opt(r.new_price_ratio)
+        )
+    ),
+    "AssessDepegRisk": lambda r: (
+        "n_scenarios={}, current_dev={}".format(
+            len(r.scenarios), _fmt_opt(r.current_peg_deviation)
+        )
+    ),
 }
 
 
@@ -360,6 +453,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     "pool_type {!r} must be one of {}.".format(
                         pool_type, list(POOL_TYPES)))
 
+    # Per-tool protocol gate: reject an obvious tool+pool_type mismatch
+    # (e.g. AssessDepegRisk on a uniswap_v2 pool) before any chain read,
+    # so the LLM gets a clean error instead of a confusing upstream crash.
+    compatible = _TOOL_POOL_TYPES.get(name, set())
+    if pool_type not in compatible:
+        return _err(name, pool_ref, arguments, t0, "IncompatiblePoolType",
+                    "Tool {!r} is not compatible with pool_type {!r}. "
+                    "Compatible pool types: {}.".format(
+                        name, pool_type, sorted(compatible)))
+
     declared_chain_id = arguments.get("chain_id")
     block_number = arguments.get("block_number")
 
@@ -397,10 +500,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     primitive_args = {k: v for k, v in arguments.items()
                       if k not in IDENTITY_KEYS}
 
-    # Resolve the token-name string to an ERC20 for CalculateSlippage.
+    # Resolve the token-name string to an ERC20 the primitive expects.
+    # CalculateSlippage.token_in is required (the LLM names it). AssessDepegRisk
+    # .depeg_token is dispatch-supplied: use the caller's depeg_token_name if
+    # given, else default to the pool's first token so the tool works without
+    # the LLM having to choose (the V3-tick-default philosophy, applied to the
+    # depeg asset). Either way the upstream primitive gets a concrete ERC20.
     if name in _TOKEN_ARG_RENAMES:
         schema_name, primitive_name = _TOKEN_ARG_RENAMES[name]
         token_name = primitive_args.pop(schema_name, None)
+        if token_name is None and name == "AssessDepegRisk":
+            pool_tokens = _list_pool_tokens(lp)
+            token_name = pool_tokens[0] if pool_tokens else None
         if token_name is not None:
             try:
                 primitive_args[primitive_name] = _resolve_token(lp, token_name)
@@ -439,7 +550,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def build_server() -> Server:
     """Configure the low-level MCP server with list_tools + call_tool."""
-    server = Server("defimind", version="0.1.0")
+    server = Server("defimind", version="0.2.0")
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
