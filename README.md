@@ -76,13 +76,13 @@ Slippage, price impact, and max trade size for a given trade.
 
 ### Balancer (2-asset weighted)
 
-#### `AnalyzeBalancerPosition`
+#### `AnalyzeBalancerLP`
 PnL decomposition for a 2-asset Balancer weighted-pool position, using
 the weighted-pool IL formula where the token weight shapes IL magnitude.
 
 > "How is my 80/20 BAL/WETH Balancer position doing?"
 
-#### `SimulateBalancerPriceMove`
+#### `SimulateBalancerMove`
 "What if the base token moves X%?" — projected value and IL on a 2-asset
 weighted pool, weight-aware.
 
@@ -90,14 +90,14 @@ weighted pool, weight-aware.
 
 ### Curve stableswap (2-asset plain)
 
-#### `AnalyzeStableswapPosition`
+#### `AnalyzeStableswapLP`
 PnL decomposition for a 2-asset Curve stableswap position via the
 amplified-invariant IL formula — small depegs can produce outsized IL at
 high A.
 
 > "Analyze my position in the crvUSD/USDC pool."
 
-#### `SimulateStableswapPriceMove`
+#### `SimulateStableswapMove`
 "What if the peg shifts X%?" — projected value and IL on a 2-asset
 stableswap pool. At high A, large shocks may be physically unreachable
 (returned as null).

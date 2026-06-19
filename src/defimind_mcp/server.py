@@ -147,6 +147,36 @@ _TOKEN_ARG_RENAMES = {
 # Renamed token args that are required of the LLM (vs. dispatch-defaulted).
 _REQUIRED_TOKEN_ARGS = frozenset({"CalculateSlippage"})
 
+# Public tool-name aliases. Some clients (notably claude.ai connectors)
+# namespace each remote tool with a prefix, then validate the COMBINED name
+# against ^[a-zA-Z0-9_-]{1,64}$. DeFiPy's verbose Balancer/Stableswap
+# registry names overflow that 64-char ceiling once prefixed — the longest,
+# SimulateStableswapPriceMove (27 chars), failed claude.ai's validator and
+# blocked the whole connector (the tool list is rejected as a unit). We
+# expose shorter public names while keeping the DeFiPy registry names
+# canonical internally; aliasing happens only at the boundaries (list_tools
+# exposure, call_tool entry, /health). call_tool resolves BOTH the public
+# alias and the original registry name, so existing callers don't break.
+_PUBLIC_ALIASES = {
+    "AnalyzeBalancerPosition":     "AnalyzeBalancerLP",
+    "AnalyzeStableswapPosition":   "AnalyzeStableswapLP",
+    "SimulateBalancerPriceMove":   "SimulateBalancerMove",
+    "SimulateStableswapPriceMove": "SimulateStableswapMove",
+}
+_REGISTRY_NAME = {pub: canon for canon, pub in _PUBLIC_ALIASES.items()}
+
+
+def _public_name(registry_name: str) -> str:
+    """Registry (canonical) name -> exposed public name."""
+    return _PUBLIC_ALIASES.get(registry_name, registry_name)
+
+
+def _to_registry_name(public_name: str) -> str:
+    """Exposed public name -> registry (canonical) name. Passes through
+    original registry names and unknown names unchanged."""
+    return _REGISTRY_NAME.get(public_name, public_name)
+
+
 _BUILDER = StateTwinBuilder()
 
 
@@ -241,6 +271,9 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
             if tool_name in _REQUIRED_TOKEN_ARGS and schema_name not in required:
                 required.append(schema_name)
 
+        # Expose the short public name; the registry name stays canonical
+        # for all internal lookups (keeps namespaced names within 64 chars).
+        w["name"] = _public_name(tool_name)
         wrapped.append(w)
     return wrapped
 
@@ -434,6 +467,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     t0 = time.monotonic()
     arguments = dict(arguments or {})
+    # Accept either the short public alias or the canonical registry name;
+    # normalize to the registry name for all internal lookups below.
+    name = _to_registry_name(name)
     pool_address = arguments.get("pool_address", "")
     pool_type = arguments.get("pool_type", "")
     pool_ref = "{}:{}".format(pool_type or "?", pool_address or "?")
@@ -550,7 +586,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def build_server() -> Server:
     """Configure the low-level MCP server with list_tools + call_tool."""
-    server = Server("defimind", version="0.2.0")
+    server = Server("defimind", version="0.2.1")
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
@@ -595,7 +631,8 @@ def create_app():
         await session_manager.handle_request(scope, receive, send)
 
     async def health(_request):
-        return JSONResponse({"status": "ok", "tools": list(TOOL_NAMES)})
+        return JSONResponse({"status": "ok",
+                             "tools": [_public_name(n) for n in TOOL_NAMES]})
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):

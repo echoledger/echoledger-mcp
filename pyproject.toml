@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "defimind-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "DeFiMind MCP — live LP analytics (Uniswap V2/V3, Balancer, Curve stableswap) over the Model Context Protocol, powered by open-source DeFiPy."
 readme = "README.md"
 requires-python = ">=3.11"
