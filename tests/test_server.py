@@ -122,12 +122,38 @@ def _text(result):
 def test_enumerates_all_ten_tools():
     schemas = server._wrap_schemas_with_pool_identity()
     names = sorted(s["name"] for s in schemas)
-    assert names == sorted(server.TOOL_NAMES)
+    # Exposed names are the public aliases (registry names stay canonical).
+    expected = sorted(server._public_name(n) for n in server.TOOL_NAMES)
+    assert names == expected
     assert len(names) == 10
-    # The 5 v0.2 Balancer/Stableswap tools are all present.
-    assert {"AnalyzeBalancerPosition", "SimulateBalancerPriceMove",
-            "AnalyzeStableswapPosition", "SimulateStableswapPriceMove",
+    # The 5 v0.2 Balancer/Stableswap tools are all present (public names).
+    assert {"AnalyzeBalancerLP", "SimulateBalancerMove",
+            "AnalyzeStableswapLP", "SimulateStableswapMove",
             "AssessDepegRisk"}.issubset(set(names))
+
+
+def test_exposed_names_fit_namespaced_64_char_limit():
+    # Regression: claude.ai (and similar clients) prefix-namespace tool
+    # names and cap the combined name at 64 chars. SimulateStableswapPriceMove
+    # (27) overflowed and blocked the whole connector. Keep exposed names
+    # short enough that even a ~40-char client prefix stays under 64.
+    names = [s["name"] for s in server._wrap_schemas_with_pool_identity()]
+    longest = max(names, key=len)
+    assert len(longest) <= 22, "{} is {} chars".format(longest, len(longest))
+    assert "SimulateStableswapPriceMove" not in names  # the offending name
+
+
+def test_public_alias_and_canonical_both_dispatch(patch_provider):
+    # call_tool must accept the short public alias AND the original registry
+    # name (back-compat for any caller using the old name).
+    for name in ("SimulateStableswapMove", "SimulateStableswapPriceMove"):
+        patch_provider(_stableswap_snap())
+        out = json.loads(_text(_call(name, {
+            "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+            "pool_type": "stableswap",
+            "price_change_pct": -0.02, "lp_init_amt": 100.0,
+        })))
+        assert out["token_names"] == ["USDC", "DAI"]
 
 
 def test_identity_fields_injected_and_required():
