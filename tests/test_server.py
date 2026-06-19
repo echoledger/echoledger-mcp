@@ -18,7 +18,9 @@ import math
 import pytest
 
 from defipy.twin import StateTwinBuilder
-from defipy.twin.snapshot import V2PoolSnapshot, V3PoolSnapshot
+from defipy.twin.snapshot import (
+    V2PoolSnapshot, V3PoolSnapshot, BalancerPoolSnapshot, StableswapPoolSnapshot,
+)
 from defimind_mcp import server
 
 
@@ -64,6 +66,39 @@ def _v3_snap(chain_id=1):
     )
 
 
+# A real mainnet-shaped Balancer 50/50 ETH/DAI pool and a 2-coin USDC/DAI
+# plain Stableswap pool — reserves synthetic, only a coherent snapshot is
+# needed. (The live-gate fixtures in test_live.py use real on-chain pools:
+# BAL/WETH 80/20 and the crvUSD/USDC 2-coin pool.)
+ETH_DAI_BALANCER = "0x0000000000000000000000000000000000bal5050"
+USDC_DAI_STABLESWAP = "0x00000000000000000000000000000000005wapa10"
+
+
+def _balancer_snap(chain_id=1):
+    return BalancerPoolSnapshot(
+        pool_id=ETH_DAI_BALANCER,
+        token0_name="ETH",
+        token1_name="DAI",
+        reserve0=1_000.0,
+        reserve1=100_000.0,
+        weight0=0.5,
+        weight1=0.5,
+        pool_shares_init=100.0,
+        chain_id=chain_id,
+    )
+
+
+def _stableswap_snap(chain_id=1):
+    return StableswapPoolSnapshot(
+        pool_id=USDC_DAI_STABLESWAP,
+        token_names=["USDC", "DAI"],
+        reserves=[100_000.0, 100_000.0],
+        A=10,
+        decimals=18,
+        chain_id=chain_id,
+    )
+
+
 @pytest.fixture
 def patch_provider(monkeypatch):
     def _install(snapshot):
@@ -84,11 +119,15 @@ def _text(result):
 # ─── Enumeration / schema shape ─────────────────────────────────────────────
 
 
-def test_enumerates_exactly_five_tools():
+def test_enumerates_all_ten_tools():
     schemas = server._wrap_schemas_with_pool_identity()
     names = sorted(s["name"] for s in schemas)
     assert names == sorted(server.TOOL_NAMES)
-    assert len(names) == 5
+    assert len(names) == 10
+    # The 5 v0.2 Balancer/Stableswap tools are all present.
+    assert {"AnalyzeBalancerPosition", "SimulateBalancerPriceMove",
+            "AnalyzeStableswapPosition", "SimulateStableswapPriceMove",
+            "AssessDepegRisk"}.issubset(set(names))
 
 
 def test_identity_fields_injected_and_required():
@@ -98,7 +137,8 @@ def test_identity_fields_injected_and_required():
         for key in ("pool_address", "rpc_url", "pool_type"):
             assert key in props
             assert key in required
-        assert props["pool_type"]["enum"] == ["uniswap_v2", "uniswap_v3"]
+        assert props["pool_type"]["enum"] == [
+            "uniswap_v2", "uniswap_v3", "balancer", "stableswap"]
         # Recipe pool_id must be gone.
         assert "pool_id" not in props
 
@@ -297,6 +337,118 @@ def test_v3_il_differential_tight_vs_full(patch_provider):
     assert il_full == pytest.approx(expected_v2, abs=1e-6)
 
 
+# ─── v0.2: Balancer + Stableswap dispatch (fake provider, real primitives) ───
+# Each of the 5 new tools dispatches through real builder + real primitive
+# against a hand-built Balancer/Stableswap snapshot, and returns the expected
+# result dataclass. Mirrors the V2/V3 coverage above for the new pool types.
+
+
+def test_analyze_balancer_position(patch_provider):
+    patch_provider(_balancer_snap())
+    out = json.loads(_text(_call("AnalyzeBalancerPosition", {
+        "pool_address": ETH_DAI_BALANCER, "rpc_url": "http://fake",
+        "pool_type": "balancer",
+        "lp_init_amt": 10.0, "entry_base_amt": 100.0, "entry_opp_amt": 10_000.0,
+    })))
+    assert out["base_tkn_name"] == "ETH"
+    assert out["base_weight"] == 0.5
+    assert isinstance(out["net_pnl"], (int, float))
+    assert out["diagnosis"] in {"net_positive", "fee_compensated", "il_dominant"}
+
+
+def test_simulate_balancer_price_move(patch_provider):
+    patch_provider(_balancer_snap())
+    out = json.loads(_text(_call("SimulateBalancerPriceMove", {
+        "pool_address": ETH_DAI_BALANCER, "rpc_url": "http://fake",
+        "pool_type": "balancer",
+        "price_change_pct": -0.30, "lp_init_amt": 10.0,
+    })))
+    assert isinstance(out["new_value"], (int, float))
+    assert isinstance(out["il_at_new_price"], (int, float))
+    assert out["il_at_new_price"] <= 0.0  # IL is a loss for any move
+    assert out["new_price_ratio"] == pytest.approx(0.70, abs=1e-9)
+
+
+def test_analyze_stableswap_position(patch_provider):
+    patch_provider(_stableswap_snap())
+    out = json.loads(_text(_call("AnalyzeStableswapPosition", {
+        "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+        "pool_type": "stableswap",
+        "lp_init_amt": 100.0, "entry_amounts": [100.0, 100.0],
+    })))
+    assert out["token_names"] == ["USDC", "DAI"]
+    assert out["A"] == 10
+    assert "il_percentage" in out
+    assert isinstance(out["diagnosis"], str)
+
+
+def test_simulate_stableswap_price_move(patch_provider):
+    # At A=10 a small (-2%) shock is reachable, so fields are populated.
+    patch_provider(_stableswap_snap())
+    out = json.loads(_text(_call("SimulateStableswapPriceMove", {
+        "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+        "pool_type": "stableswap",
+        "price_change_pct": -0.02, "lp_init_amt": 100.0,
+    })))
+    assert out["token_names"] == ["USDC", "DAI"]
+    assert "new_value" in out and "il_at_new_price" in out
+    assert out["new_price_ratio"] == pytest.approx(0.98, abs=1e-9)
+
+
+def test_assess_depeg_risk(patch_provider):
+    patch_provider(_stableswap_snap())
+    out = json.loads(_text(_call("AssessDepegRisk", {
+        "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+        "pool_type": "stableswap",
+        "lp_init_amt": 100.0, "depeg_token_name": "USDC",
+    })))
+    assert out["depeg_token"] == "USDC"
+    assert out["protocol_type"] == "stableswap"
+    assert out["n_assets"] == 2
+    assert len(out["scenarios"]) == 5
+    assert out["current_peg_deviation"] is not None
+
+
+def test_assess_depeg_risk_defaults_token(patch_provider):
+    # depeg_token_name is optional; dispatch must supply the pool's first
+    # token so the upstream primitive (which requires a depeg_token ERC20)
+    # still runs. Without a default this would crash on a missing arg.
+    snap = _stableswap_snap()
+    patch_provider(snap)
+    out = json.loads(_text(_call("AssessDepegRisk", {
+        "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+        "pool_type": "stableswap", "lp_init_amt": 100.0,
+    })))
+    # Resolves to one of the pool's two tokens (the vault's first).
+    assert out["depeg_token"] in {"USDC", "DAI"}
+    assert len(out["scenarios"]) == 5
+
+
+def test_incompatible_pool_type_is_rejected(patch_provider):
+    # A stableswap-only tool pointed at a uniswap_v2 pool must fail with a
+    # clean IncompatiblePoolType error BEFORE any chain read (no snapshot).
+    fake = patch_provider(_v2_snap())
+    out = _call("AssessDepegRisk", {
+        "pool_address": USDC_WETH_V2, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v2", "lp_init_amt": 100.0,
+    })
+    assert "not compatible" in _text(out)
+    assert "stableswap" in _text(out)
+    assert fake.calls == []  # gated before the provider was ever called
+
+
+def test_balancer_tool_rejects_stableswap_pool(patch_provider):
+    fake = patch_provider(_stableswap_snap())
+    out = _call("AnalyzeBalancerPosition", {
+        "pool_address": USDC_DAI_STABLESWAP, "rpc_url": "http://fake",
+        "pool_type": "stableswap",
+        "lp_init_amt": 10.0, "entry_base_amt": 1.0, "entry_opp_amt": 1.0,
+    })
+    assert "not compatible" in _text(out)
+    assert "balancer" in _text(out)
+    assert fake.calls == []
+
+
 # ─── Error paths ────────────────────────────────────────────────────────────
 
 
@@ -314,7 +466,7 @@ def test_missing_required_args():
 
 
 def test_unknown_tool():
-    out = _call("AnalyzeBalancerPosition", {
+    out = _call("NotARealTool", {
         "pool_address": "0xabc", "rpc_url": "http://fake",
         "pool_type": "uniswap_v2",
     })

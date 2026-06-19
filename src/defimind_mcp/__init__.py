@@ -1,7 +1,8 @@
-"""DeFiMind MCP — live Uniswap V2/V3 pool analytics over the Model Context Protocol.
+"""DeFiMind MCP — live LP analytics over the Model Context Protocol.
 
-Server logic lands in Phase 1 (lifted from defipy's stdio MCP server and
-ported to streamable HTTP). This package is the scaffold target.
+Ten tools over Uniswap V2/V3, Balancer weighted, and Curve stableswap
+pools (lifted from defipy's stdio MCP server and ported to streamable
+HTTP). v0.2 added the 5 Balancer/Stableswap tools.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

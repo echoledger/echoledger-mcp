@@ -4,18 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "defimind-mcp"
-version = "0.1.0"
-description = "DeFiMind MCP — live Uniswap V2/V3 pool analytics over the Model Context Protocol, powered by open-source DeFiPy."
+version = "0.2.0"
+description = "DeFiMind MCP — live LP analytics (Uniswap V2/V3, Balancer, Curve stableswap) over the Model Context Protocol, powered by open-source DeFiPy."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Ian C. Moore" }]
-keywords = ["mcp", "defi", "uniswap", "ethereum", "defipy", "amm"]
+keywords = ["mcp", "defi", "uniswap", "balancer", "curve", "stableswap", "ethereum", "defipy", "amm"]
 
 dependencies = [
-    # Chain-reading DeFiPy: LiveProvider V2/V3 via caller-supplied RPC.
-    # Pinned to 2.1.x so the hosted tool surface can't silently shift.
-    "defipy[chain]>=2.1,<2.2",
+    # Chain-reading DeFiPy: LiveProvider V2/V3 + Balancer + Stableswap via
+    # caller-supplied RPC. Pinned to the 2.2.x line so the hosted tool
+    # surface can't silently shift; lifted from <2.2 to ship the Balancer
+    # & Stableswap LiveProviders (the v0.2 surface expansion, 5 -> 10 tools).
+    "defipy[chain]>=2.2,<2.3",
     # MCP Python SDK.
     "mcp>=1.27.0",
     # Streamable-HTTP transport mount (final choice settled in Phase 1).

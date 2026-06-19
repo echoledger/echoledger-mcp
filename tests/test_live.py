@@ -1,12 +1,18 @@
-"""Live-RPC gate tests — the Phase 1 gate's real-chain half.
+"""Live-RPC gate tests — the real-chain half of the gate.
 
 Skipped unless DEFIMIND_TEST_RPC_URL is set to an Ethereum-mainnet RPC.
 Run:  DEFIMIND_TEST_RPC_URL="https://eth-mainnet.../v2/<key>" \\
           .venv/bin/pytest tests/test_live.py -v
 
-Exercises CheckPoolHealth + CalculateSlippage against a real mainnet V2
-pool (USDC/WETH) and V3 pool (USDC/WETH 0.05%), through the real
-LiveProvider — no fakes.
+Exercises the dispatch path against real mainnet pools through the real
+LiveProvider — no fakes:
+  - Uniswap V2/V3 (USDC/WETH): CheckPoolHealth + CalculateSlippage.
+  - Balancer 2-asset weighted (BAL/WETH 80/20): AnalyzeBalancerPosition +
+    SimulateBalancerPriceMove.
+  - Curve plain 2-asset stableswap (crvUSD/USDC): AnalyzeStableswapPosition
+    + AssessDepegRisk. (SimulateStableswapPriceMove is intentionally not
+    asserted live: at the pool's high A a small depeg is physically
+    unreachable and the primitive correctly returns null sentinels.)
 """
 
 import asyncio
@@ -23,6 +29,10 @@ pytestmark = pytest.mark.skipif(
 
 USDC_WETH_V2 = "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
 USDC_WETH_V3 = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
+# Archetypal 2-asset Balancer weighted pool: 80/20 BAL/WETH.
+BAL_WETH_BALANCER = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+# 2-coin plain Curve stableswap pool: crvUSD/USDC (A=2000).
+CRVUSD_USDC_STABLESWAP = "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E"
 
 
 def _call(name, args):
@@ -61,3 +71,60 @@ def test_slippage_v3_live():
         "token_in_name": "USDC",
     }))
     assert payload["slippage_pct"] is not None
+
+
+# ─── v0.2: Balancer + Stableswap live gate ───────────────────────────────────
+
+
+def test_balancer_position_live():
+    payload = json.loads(_call("AnalyzeBalancerPosition", {
+        "pool_address": BAL_WETH_BALANCER, "rpc_url": RPC,
+        "pool_type": "balancer",
+        "lp_init_amt": 10.0, "entry_base_amt": 1_000.0, "entry_opp_amt": 10.0,
+    }))
+    assert 0.0 < payload["base_weight"] < 1.0
+    assert isinstance(payload["net_pnl"], (int, float))
+    assert payload["diagnosis"] in {
+        "net_positive", "fee_compensated", "il_dominant"}
+
+
+def test_balancer_price_move_live():
+    payload = json.loads(_call("SimulateBalancerPriceMove", {
+        "pool_address": BAL_WETH_BALANCER, "rpc_url": RPC,
+        "pool_type": "balancer",
+        "price_change_pct": -0.30, "lp_init_amt": 10.0,
+    }))
+    assert payload["new_value"] is not None
+    assert payload["il_at_new_price"] <= 0.0
+
+
+def test_analyze_stableswap_position_live():
+    payload = json.loads(_call("AnalyzeStableswapPosition", {
+        "pool_address": CRVUSD_USDC_STABLESWAP, "rpc_url": RPC,
+        "pool_type": "stableswap",
+        "lp_init_amt": 100.0, "entry_amounts": [100.0, 100.0],
+    }))
+    assert len(payload["token_names"]) == 2
+    assert payload["A"] > 0
+    assert isinstance(payload["diagnosis"], str)
+
+
+def test_assess_depeg_risk_live():
+    payload = json.loads(_call("AssessDepegRisk", {
+        "pool_address": CRVUSD_USDC_STABLESWAP, "rpc_url": RPC,
+        "pool_type": "stableswap", "lp_init_amt": 100.0,
+    }))
+    assert payload["protocol_type"] == "stableswap"
+    assert payload["n_assets"] == 2
+    assert payload["current_peg_deviation"] is not None
+    assert len(payload["scenarios"]) == 5
+
+
+def test_incompatible_pool_type_live():
+    # A stableswap tool on a V2 pool address must be gated cleanly, never
+    # reaching the chain (no RPC round-trip, no upstream crash).
+    out = _call("AssessDepegRisk", {
+        "pool_address": USDC_WETH_V2, "rpc_url": RPC,
+        "pool_type": "uniswap_v2", "lp_init_amt": 100.0,
+    })
+    assert "not compatible" in out
