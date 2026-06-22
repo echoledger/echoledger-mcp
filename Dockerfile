@@ -60,7 +60,7 @@ USER appuser
 
 EXPOSE 8080
 
-# Liveness: the /health route enumerates the 5 tools with zero config.
+# Liveness: the /health route enumerates the 11 tools with zero config.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/health').read()" || exit 1
 

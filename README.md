@@ -2,9 +2,9 @@
 
 DeFiMind's MCP server. Analyze **live** Uniswap V2/V3, Balancer, and
 Curve stableswap pools — positions, price moves, pool health, rug
-signals, slippage, and depeg risk — from any MCP-compatible AI client.
-Reads real chain state via a caller-supplied RPC; the endpoint itself is
-authless.
+signals, slippage, and depeg risk — or build a portable **State Twin**
+for off-MCP analysis, from any MCP-compatible AI client. Reads real chain
+state via a caller-supplied RPC; the endpoint itself is authless.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-streamable--http-6ea8ff)](https://modelcontextprotocol.io)
@@ -34,13 +34,24 @@ Listed at [smithery.ai/servers/ic3moore/defimind](https://smithery.ai/servers/ic
 
 ## Tools
 
-v0.2 ships **10 tools** across Uniswap V2/V3, Balancer weighted, and
-Curve stableswap pools, reading live pool state. Each call takes
-`pool_address`, `rpc_url`, and `pool_type` (`uniswap_v2` | `uniswap_v3`
-| `balancer` | `stableswap`), plus optional `chain_id` guard and
-`block_number` pin — nothing is stored. Each tool is protocol-specific;
-pointing one at the wrong `pool_type` returns a clean error before any
-chain read.
+The endpoint ships **11 tools** over live Uniswap V2/V3, Balancer
+weighted (2-asset), and Curve stableswap (2-asset) pools. Two surfaces:
+
+- **10 reactive primitives** — one question, one answer, one chain read.
+  Four of them also take a **vector** input (e.g. `price_change_pcts[]`,
+  `amounts_in[]`) to sweep a whole grid/curve in one call.
+- **`BuildStateTwin`** — returns a portable State Twin (the pool's state
+  as JSON) that a client rehydrates locally to run unlimited
+  counterfactuals **off the MCP, zero further RPC**.
+
+Every call takes `pool_address`, `rpc_url`, and `pool_type`, plus an
+optional `chain_id` guard and `block_number` pin — nothing is stored.
+Each reactive tool is protocol-specific and **advertises only the
+`pool_type` values it accepts**; pointing one at an unsupported type
+returns a clean error before any chain read.
+
+**Full reference — params, returns, and a verified example per tool:
+[`docs/TOOLS.md`](docs/TOOLS.md).**
 
 **Scope:** the Balancer tools cover **2-asset weighted** pools; the
 stableswap tools cover **2-asset plain Curve** pools (rate-bearing pools
@@ -110,6 +121,21 @@ IL across a ladder of depeg levels (default 2%, 5%, 10%, 20%, 50%) for a
 
 > "How exposed is my crvUSD/USDC position to a depeg?"
 
+### State twin builder (all four pool types)
+
+#### `BuildStateTwin`
+Reads a pool once and returns a **portable State Twin** — the pool's state
+as JSON (`__type__` + fields + a `content_hash`). A client rehydrates it
+locally and runs unlimited counterfactuals (price moves, IL, slippage)
+**off the MCP, with zero further RPC** — build once, run N. Spans all four
+pool types. See the twin round-trip in [`docs/TOOLS.md`](docs/TOOLS.md) and
+the [`defimind` package](https://github.com/defimind-ai/defimind).
+
+> "Build me a reusable twin of the USDC/ETH 0.05% pool."
+
+*(Honest gap: it's a single-block STATE twin — history-derived health
+metrics stay server-side reads inside `CheckPoolHealth`/`DetectRugSignals`.)*
+
 ## How it works
 
 `defimind-mcp` reads **live** Uniswap V2/V3, Balancer, and Curve
@@ -127,6 +153,10 @@ now pointed at real pools. **The math is open; the reports are paid.**
 - **v0.2 — Balancer & Stableswap live reads** ✓ shipped. The 5
   Balancer/Stableswap tools went live on DeFiPy 2.2's LiveProviders
   (2-asset weighted + 2-asset plain Curve).
+- **v0.2.2 — honest schemas, vectors & the twin builder** ✓ shipped.
+  Per-tool `pool_type` enums; vectorized scenario inputs on the four
+  scenario tools; and `BuildStateTwin` — the 11th tool — for portable,
+  off-MCP twin analysis.
 - **N-asset & rate-bearing pools** — 3-asset Balancer, N-coin and
   rate-bearing (metapool/LSD) Curve, once the upstream DeFiPy primitives
   extend past 2 assets.
