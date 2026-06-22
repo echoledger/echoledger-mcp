@@ -163,8 +163,13 @@ def test_identity_fields_injected_and_required():
         for key in ("pool_address", "rpc_url", "pool_type"):
             assert key in props
             assert key in required
-        assert props["pool_type"]["enum"] == [
-            "uniswap_v2", "uniswap_v3", "balancer", "stableswap"]
+        # SPEC 1.1: pool_type is per-tool now — it advertises EXACTLY the
+        # values that tool accepts, not the full four-value union. Each enum
+        # must be non-empty and match the tool's accepted set.
+        registry_name = server._to_registry_name(s["name"])
+        assert props["pool_type"]["enum"] == \
+            server._accepted_pool_types(registry_name)
+        assert props["pool_type"]["enum"], s["name"]
         # Recipe pool_id must be gone.
         assert "pool_id" not in props
 
@@ -473,6 +478,77 @@ def test_balancer_tool_rejects_stableswap_pool(patch_provider):
     assert "not compatible" in _text(out)
     assert "balancer" in _text(out)
     assert fake.calls == []
+
+
+# ─── SPEC 1.1: pool_type routing is honest (advertised == accepted) ──────────
+# The advertised pool_type enum on each tool must list ONLY the values that
+# tool actually accepts, and an unsupported value must be rejected cleanly
+# (no chain read, no stack trace) naming the accepted values.
+
+# Independent source of truth for the expected per-tool enums (the SPEC 1.1
+# table), keyed by exposed public name. Hardcoded on purpose so this catches
+# drift in _TOOL_POOL_TYPES rather than re-deriving from it.
+_EXPECTED_POOL_TYPE_ENUMS = {
+    "AnalyzePosition":        ["uniswap_v2", "uniswap_v3"],
+    "SimulatePriceMove":      ["uniswap_v2", "uniswap_v3"],
+    "CheckPoolHealth":        ["uniswap_v2", "uniswap_v3"],
+    "DetectRugSignals":       ["uniswap_v2", "uniswap_v3"],
+    "CalculateSlippage":      ["uniswap_v2", "uniswap_v3"],
+    "AnalyzeBalancerLP":      ["balancer"],
+    "SimulateBalancerMove":   ["balancer"],
+    "AnalyzeStableswapLP":    ["stableswap"],
+    "SimulateStableswapMove": ["stableswap"],
+    "AssessDepegRisk":        ["stableswap"],
+}
+
+
+def test_advertised_pool_type_enum_matches_accepted_per_tool():
+    schemas = {s["name"]: s for s in server._wrap_schemas_with_pool_identity()}
+    # Every exposed tool is covered by the expectation table, and vice versa.
+    assert set(schemas) == set(_EXPECTED_POOL_TYPE_ENUMS)
+    for name, expected in _EXPECTED_POOL_TYPE_ENUMS.items():
+        enum = schemas[name]["inputSchema"]["properties"]["pool_type"]["enum"]
+        assert enum == expected, "{}: advertised {} != accepted {}".format(
+            name, enum, expected)
+        # Single-type tools must pin (one value); none may advertise the
+        # full four-value union any more.
+        assert len(enum) < 4
+
+
+# One unsupported pool_type per tool — paired so each is a VALID protocol
+# (hits the per-tool IncompatiblePoolType gate, not the BadPoolType path).
+_UNSUPPORTED_CASES = [
+    ("AnalyzePosition", "balancer"),
+    ("SimulatePriceMove", "stableswap"),
+    ("CheckPoolHealth", "balancer"),
+    ("DetectRugSignals", "stableswap"),
+    ("CalculateSlippage", "balancer"),
+    ("AnalyzeBalancerLP", "uniswap_v2"),
+    ("SimulateBalancerMove", "stableswap"),
+    ("AnalyzeStableswapLP", "uniswap_v3"),
+    ("SimulateStableswapMove", "balancer"),
+    ("AssessDepegRisk", "uniswap_v2"),
+]
+
+
+@pytest.mark.parametrize("tool_name,bad_type", _UNSUPPORTED_CASES)
+def test_unsupported_pool_type_rejected_per_tool(patch_provider, tool_name,
+                                                 bad_type):
+    # A supported value is exercised per tool elsewhere; here we assert every
+    # tool rejects an unsupported (but valid) pool_type with a clean
+    # IncompatiblePoolType error BEFORE any chain read, naming the accepted
+    # values — never a runtime crash.
+    fake = patch_provider(_v2_snap())
+    out = _text(_call(tool_name, {
+        "pool_address": "0xabc", "rpc_url": "http://fake",
+        "pool_type": bad_type,
+    }))
+    assert "not compatible" in out
+    registry_name = server._to_registry_name(tool_name)
+    for accepted in server._accepted_pool_types(registry_name):
+        assert accepted in out
+    assert bad_type not in server._accepted_pool_types(registry_name)
+    assert fake.calls == []  # gated before the provider was ever called
 
 
 # ─── Error paths ────────────────────────────────────────────────────────────

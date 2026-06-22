@@ -124,6 +124,24 @@ _TOOL_POOL_TYPES = {
     "AssessDepegRisk":            {"stableswap"},
 }
 
+# Human gloss per pool type, used to build per-tool pool_type descriptions
+# that name only the values that tool actually accepts.
+_POOL_TYPE_GLOSS = {
+    "uniswap_v2": "uniswap_v2",
+    "uniswap_v3": "uniswap_v3",
+    "balancer": "balancer (2-asset weighted pool)",
+    "stableswap": "stableswap (2-asset plain Curve pool)",
+}
+
+
+def _accepted_pool_types(registry_name: str) -> list[str]:
+    """The pool_type values this tool accepts, ordered by POOL_TYPES so the
+    advertised enum is deterministic and reads naturally. Single source of
+    truth is _TOOL_POOL_TYPES — the same map the runtime gate validates
+    against — so the schema enum and the dispatch check can never drift."""
+    accepted = _TOOL_POOL_TYPES.get(registry_name, set())
+    return [pt for pt in POOL_TYPES if pt in accepted]
+
 # Args consumed by the dispatch layer to build the live twin. Stripped
 # from the LLM's arguments before the primitive is invoked.
 IDENTITY_KEYS = frozenset(
@@ -220,16 +238,20 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
                 "nothing — the URL is never persisted or written to logs."
             ),
         }
+        # Advertise ONLY the pool_type values this specific tool accepts, so
+        # the schema an LLM reads matches what dispatch will actually allow
+        # (the runtime gate still enforces the same map, for raw callers that
+        # bypass schema validation). Multi-type Uniswap tools list both v2/v3;
+        # single-type Balancer/Stableswap tools pin to their one value.
+        accepted_types = _accepted_pool_types(tool_name)
+        gloss = " | ".join(_POOL_TYPE_GLOSS[pt] for pt in accepted_types)
+        only = "only " if len(accepted_types) == 1 else ""
         props["pool_type"] = {
             "type": "string",
-            "enum": list(POOL_TYPES),
+            "enum": accepted_types,
             "description": (
-                "Which protocol the pool address belongs to: 'uniswap_v2' | "
-                "'uniswap_v3' | 'balancer' (2-asset weighted pool) | "
-                "'stableswap' (2-asset plain Curve pool). Must match the tool: "
-                "the position/price/health/rug/slippage Uniswap tools take "
-                "uniswap_v2|uniswap_v3; the Balancer tools take balancer; the "
-                "Stableswap/depeg tools take stableswap."
+                "Which protocol the pool at pool_address belongs to. This "
+                "tool accepts {}{}.".format(only, gloss)
             ),
         }
         props["chain_id"] = {
