@@ -6,4 +6,4 @@ HTTP). v0.2 added the 5 Balancer/Stableswap tools; 0.2.2 added the
 BuildStateTwin oracle — 10 reactive primitives + 1 twin builder.
 """
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"

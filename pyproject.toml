@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "defimind-mcp"
-version = "0.2.2"
+version = "0.2.3"
 description = "DeFiMind MCP — live LP analytics (Uniswap V2/V3, Balancer, Curve stableswap) over the Model Context Protocol, powered by open-source DeFiPy."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,10 +17,13 @@ dependencies = [
     # caller-supplied RPC. Pinned to the 2.2.x line so the hosted tool
     # surface can't silently shift; lifted from <2.2 to ship the Balancer
     # & Stableswap LiveProviders (the v0.2 surface expansion, 5 -> 10 tools).
-    # Floor at 2.2.1 for the DetectRugSignals live-snapshot fix (2.2.0
-    # false-flagged healthy live pools as "high" risk); also busts the
-    # Docker dep-layer cache so a redeploy actually pulls 2.2.1.
-    "defipy[chain]>=2.2.1,<2.3",
+    # Floor at 2.2.2 for the V2 State Twin real-LP-totalSupply fix (2.2.1
+    # and earlier mis-scaled AnalyzePosition's absolute V2 outputs —
+    # current_value / net_pnl / fee_income); the bumped floor also busts the
+    # Docker dep-layer cache so a redeploy actually pulls 2.2.2. (2.2.1 fixed
+    # DetectRugSignals live-snapshot false-positives; 2.2.0 shipped the
+    # Balancer/Stableswap LiveProviders.)
+    "defipy[chain]>=2.2.2,<2.3",
     # MCP Python SDK.
     "mcp>=1.27.0",
     # Streamable-HTTP transport mount (final choice settled in Phase 1).
