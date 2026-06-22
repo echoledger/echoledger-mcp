@@ -18,6 +18,7 @@ import math
 import pytest
 
 from defipy.twin import StateTwinBuilder
+from defipy.twin import snapshot as snapshot_module
 from defipy.twin.snapshot import (
     V2PoolSnapshot, V3PoolSnapshot, BalancerPoolSnapshot, StableswapPoolSnapshot,
 )
@@ -701,6 +702,154 @@ def test_vector_v3_with_tick_defaults(patch_provider):
     assert isinstance(out, list) and len(out) == 3
     assert len(fake.calls) == 1                      # twin built once
     assert out[1]["new_price_ratio"] == pytest.approx(1.0)  # the 0.0 scenario
+
+
+# ─── SPEC 1.3: BuildStateTwin (the 11th tool) ────────────────────────────────
+# A managed-RPC twin oracle: reads chain once, serializes the PoolSnapshot to
+# the wire form { "__type__", <fields>, "content_hash" } a client rehydrates
+# locally. Spans all four pool types; no twin build, no primitive.
+
+import hashlib  # noqa: E402  (local to the SPEC 1.3 block)
+
+
+# (pool_type, snap factory, expected snapshot class name)
+_TWIN_CASES = [
+    ("uniswap_v2", _v2_snap, "V2PoolSnapshot"),
+    ("uniswap_v3", _v3_snap, "V3PoolSnapshot"),
+    ("balancer", _balancer_snap, "BalancerPoolSnapshot"),
+    ("stableswap", _stableswap_snap, "StableswapPoolSnapshot"),
+]
+_TWIN_IDS = [c[0] for c in _TWIN_CASES]
+
+
+def _twin_call(pool_type, **extra):
+    return json.loads(_text(_call("BuildStateTwin", {
+        "pool_address": "0xpool", "rpc_url": "http://fake",
+        "pool_type": pool_type, **extra})))
+
+
+def test_surface_has_eleven_tools_with_build_state_twin():
+    names = [s["name"] for s in server._all_tool_schemas()]
+    assert len(names) == 11
+    assert "BuildStateTwin" in names
+    bst = next(s for s in server._all_tool_schemas()
+               if s["name"] == "BuildStateTwin")
+    props = bst["inputSchema"]["properties"]
+    # All four pool types are genuinely supported here (spans every snapshot).
+    assert props["pool_type"]["enum"] == [
+        "uniswap_v2", "uniswap_v3", "balancer", "stableswap"]
+    for key in ("pool_address", "rpc_url", "pool_type"):
+        assert key in bst["inputSchema"]["required"]
+    # Tick params advertised (v3 position scope).
+    assert "lwr_tick" in props and "upr_tick" in props
+
+
+def test_build_state_twin_in_health():
+    from starlette.testclient import TestClient
+    with TestClient(server.create_app()) as client:
+        tools = client.get("/health").json()["tools"]
+    assert "BuildStateTwin" in tools
+    assert len(tools) == 11
+
+
+@pytest.mark.parametrize("pool_type,snap_fn,cls_name", _TWIN_CASES,
+                         ids=_TWIN_IDS)
+def test_build_state_twin_wire_format(patch_provider, pool_type, snap_fn,
+                                      cls_name):
+    snap = snap_fn()
+    patch_provider(snap)
+    twin = _twin_call(pool_type)
+
+    # __type__ matches the actual snapshot class; protocol is the discriminator.
+    assert twin["__type__"] == cls_name
+    assert twin["protocol"] == pool_type
+
+    # content_hash: 0x + 64 hex chars, recomputable from the canonical body
+    # (everything except the __type__/content_hash envelope keys).
+    assert twin["content_hash"].startswith("0x")
+    assert len(twin["content_hash"]) == 66
+    body = {k: v for k, v in twin.items()
+            if k not in ("__type__", "content_hash")}
+    recomputed = "0x" + hashlib.sha256(
+        json.dumps(body, sort_keys=True).encode("utf-8")).hexdigest()
+    assert recomputed == twin["content_hash"]
+
+    # Round-trips through getattr(snapshot_module, __type__)(**body) back to an
+    # equal snapshot (the 1.4 rehydration contract).
+    rehydrated = getattr(snapshot_module, twin["__type__"])(**body)
+    assert rehydrated == snap
+
+
+def test_build_state_twin_hash_deterministic(patch_provider):
+    # Identical pool state at the same block → identical content_hash.
+    patch_provider(_v3_snap())
+    h1 = _twin_call("uniswap_v3")["content_hash"]
+    patch_provider(_v3_snap())
+    h2 = _twin_call("uniswap_v3")["content_hash"]
+    assert h1 == h2
+    # Different state → different hash (sanity that the hash tracks the body).
+    patch_provider(_v2_snap())
+    assert _twin_call("uniswap_v2")["content_hash"] != h1
+
+
+def test_build_state_twin_passes_pool_id_and_block(patch_provider):
+    fake = patch_provider(_v2_snap())
+    _twin_call("uniswap_v2", block_number=19_500_000)
+    pool_id, kwargs = fake.calls[0]
+    assert pool_id == "uniswap_v2:0xpool"        # "<protocol>:<address>"
+    assert kwargs == {"block_number": 19_500_000}
+    assert len(fake.calls) == 1                  # reads chain exactly once
+
+
+def test_build_state_twin_forwards_v3_ticks(patch_provider):
+    # V3: caller ticks reach LiveProvider.snapshot kwargs (position scope).
+    fake = patch_provider(_v3_snap())
+    _twin_call("uniswap_v3", lwr_tick=-120, upr_tick=120)
+    _pid, kwargs = fake.calls[0]
+    assert kwargs.get("lwr_tick") == -120 and kwargs.get("upr_tick") == 120
+
+
+def test_build_state_twin_ignores_ticks_off_v3(patch_provider):
+    # Ticks are uniswap_v3-only; for other types they're not forwarded.
+    fake = patch_provider(_balancer_snap())
+    _twin_call("balancer", lwr_tick=-120, upr_tick=120)
+    _pid, kwargs = fake.calls[0]
+    assert "lwr_tick" not in kwargs and "upr_tick" not in kwargs
+
+
+def test_build_state_twin_bad_pool_type():
+    out = _text(_call("BuildStateTwin", {
+        "pool_address": "0xabc", "rpc_url": "http://fake",
+        "pool_type": "sushiswap"}))
+    assert "must be one of" in out
+
+
+def test_build_state_twin_missing_args():
+    out = _text(_call("BuildStateTwin", {"pool_type": "uniswap_v2"}))
+    assert "required" in out.lower()
+
+
+def test_build_state_twin_chain_id_mismatch(patch_provider):
+    patch_provider(_v2_snap(chain_id=8453))  # RPC reports Base
+    out = _text(_call("BuildStateTwin", {
+        "pool_address": "0xpool", "rpc_url": "http://fake",
+        "pool_type": "uniswap_v2", "chain_id": 1}))
+    assert "chain_id" in out
+
+
+def test_build_state_twin_rpc_scrubbed(monkeypatch, capsys):
+    secret = "https://eth-mainnet.example/v2/TWIN_SECRET_42"
+
+    class Leaky:
+        def snapshot(self, *a, **k):
+            raise ConnectionError(
+                "Max retries with url: /v2/TWIN_SECRET_42 (host='x')")
+    monkeypatch.setattr(server, "_make_provider", lambda rpc_url: Leaky())
+    out = _text(_call("BuildStateTwin", {
+        "pool_address": "0xabc", "rpc_url": secret,
+        "pool_type": "uniswap_v2"}))
+    assert "TWIN_SECRET_42" not in out
+    assert "TWIN_SECRET_42" not in capsys.readouterr().err
 
 
 # ─── Error paths ────────────────────────────────────────────────────────────

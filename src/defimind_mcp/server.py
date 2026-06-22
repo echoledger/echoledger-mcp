@@ -18,11 +18,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DeFiMind MCP server — 10 live LP analytics tools over HTTP.
+"""DeFiMind MCP server — 11 live tools over HTTP (10 LP analytics + BuildStateTwin).
 
 Covers Uniswap V2/V3, Balancer V2 weighted (2-asset), and Curve plain
-Stableswap (2-asset) pools. Lifted and adapted from DeFiPy's stdio
-MockProvider MCP server. Four changes from that source:
+Stableswap (2-asset) pools. The 10 reactive tools each read chain, build
+a twin, and run a defipy primitive server-side. BuildStateTwin (SPEC 1.3)
+is the one net-new, non-primitive tool: it reads chain once via
+LiveProvider, serializes the PoolSnapshot, and returns the wire form a
+client rehydrates locally — every counterfactual then runs client-side,
+off the MCP. Lifted and adapted from DeFiPy's stdio MockProvider MCP
+server. Four changes from that source:
 
   1. Subset to the 10 LiveProvider-compatible tools (the full curated
      DeFiPy registry: 5 Uniswap V2/V3 tools + 3 Balancer/Stableswap
@@ -67,6 +72,7 @@ supplied range against a full-range twin.
 
 import contextlib
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -99,6 +105,12 @@ TOOL_NAMES = (
     "SimulateStableswapPriceMove",
     "AssessDepegRisk",
 )
+
+# The one net-new, non-primitive tool (SPEC 1.3): a managed-RPC twin
+# oracle. Reads chain once, serializes the PoolSnapshot, returns the wire
+# form for client-side rehydration. Spans ALL four pool types and is
+# dispatched on its own path (no TOOL_REGISTRY primitive, no twin build).
+BUILD_TWIN_TOOL = "BuildStateTwin"
 
 # Supported live pool types (LiveProvider pool_id protocol prefixes).
 # Each must match a DeFiPy 2.2 LiveProvider prefix exactly — the dispatch
@@ -346,6 +358,97 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
     return wrapped
 
 
+def _build_state_twin_schema() -> dict:
+    """Schema for BuildStateTwin (SPEC 1.3). Unlike the reactive tools, all
+    four pool_type values are genuinely supported — this tool spans every
+    snapshot type. lwr_tick/upr_tick apply to uniswap_v3 only."""
+    return {
+        "name": BUILD_TWIN_TOOL,
+        "description": (
+            "Read a pool's on-chain state once and return it as a serialized "
+            "State Twin (JSON): the protocol-specific snapshot plus a "
+            "content_hash, in the wire form a client rehydrates locally. Use "
+            "this to pull a single managed-RPC twin, then run any number of "
+            "counterfactuals (price moves, IL, slippage) client-side, off this "
+            "server. Covers Uniswap V2/V3, Balancer 2-asset weighted, and "
+            "Curve 2-asset plain stableswap pools. The endpoint stores and "
+            "logs nothing — your rpc_url is never persisted."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pool_address": {
+                    "type": "string",
+                    "description": (
+                        "On-chain address of the pool/pair to snapshot. "
+                        "Required. Lowercase, uppercase, or checksum casing "
+                        "all work."
+                    ),
+                },
+                "rpc_url": {
+                    "type": "string",
+                    "description": (
+                        "An Ethereum (or L2) JSON-RPC URL used to read live "
+                        "pool state. Required; supplied by you per call "
+                        "(BYO-RPC) and may carry your provider key. The "
+                        "endpoint stores and logs nothing — the URL is never "
+                        "persisted or written to logs."
+                    ),
+                },
+                "pool_type": {
+                    "type": "string",
+                    "enum": list(POOL_TYPES),
+                    "description": (
+                        "Which protocol the pool at pool_address belongs to: "
+                        "'uniswap_v2' | 'uniswap_v3' | 'balancer' (2-asset "
+                        "weighted) | 'stableswap' (2-asset plain Curve). All "
+                        "four are supported — this tool spans every snapshot "
+                        "type."
+                    ),
+                },
+                "chain_id": {
+                    "type": "integer",
+                    "description": (
+                        "Optional guard. If supplied and the RPC reports a "
+                        "different chain id, the call is rejected. Omit to "
+                        "skip the check."
+                    ),
+                },
+                "block_number": {
+                    "type": "integer",
+                    "description": (
+                        "Optional block number to pin the read to a historical "
+                        "block. Omit to read the latest block."
+                    ),
+                },
+                "lwr_tick": {
+                    "type": "integer",
+                    "description": (
+                        "uniswap_v3 only — lower tick of the position range to "
+                        "snapshot. Omit for the pool's full active-liquidity "
+                        "range. Ignored for other pool types."
+                    ),
+                },
+                "upr_tick": {
+                    "type": "integer",
+                    "description": (
+                        "uniswap_v3 only — upper tick of the position range to "
+                        "snapshot. Omit for the pool's full active-liquidity "
+                        "range. Ignored for other pool types."
+                    ),
+                },
+            },
+            "required": ["pool_address", "rpc_url", "pool_type"],
+        },
+    }
+
+
+def _all_tool_schemas() -> list[dict]:
+    """Full advertised tool surface: the 10 reactive tools (per-tool pool_type
+    enums) plus the BuildStateTwin oracle (SPEC 1.3) — 11 tools total."""
+    return _wrap_schemas_with_pool_identity() + [_build_state_twin_schema()]
+
+
 # ─── Token resolution ────────────────────────────────────────────────────────
 
 
@@ -527,6 +630,23 @@ def _serialize_results(results) -> str:
     return json.dumps(payload, indent=2, default=str)
 
 
+def _serialize_state_twin(snap) -> dict:
+    """Wire form for a serialized State Twin (SPEC 1.3 — the contract 1.4
+    rehydrates). Shape:
+
+        { "__type__": "<SnapshotClass>", <all dataclass fields>,
+          "content_hash": "0x<sha256>" }
+
+    content_hash is sha256 over the canonical snapshot body — asdict(snap)
+    dumped with sort_keys — computed BEFORE the __type__/content_hash
+    envelope keys are added, so a client can recompute and verify it. The
+    snapshot has no native hash field; it is added here at the MCP layer."""
+    body = asdict(snap)
+    canonical = json.dumps(body, sort_keys=True).encode("utf-8")
+    content_hash = "0x" + hashlib.sha256(canonical).hexdigest()
+    return {"__type__": type(snap).__name__, **body, "content_hash": content_hash}
+
+
 # ─── Core dispatch ───────────────────────────────────────────────────────────
 
 
@@ -534,6 +654,71 @@ def _err(name, pool_ref, args, t0, exc_type, msg, prefix="Error"):
     _log_receipt(name, pool_ref, args, "error", (time.monotonic() - t0) * 1000,
                  error_type=exc_type, error_message=msg)
     return [TextContent(type="text", text="{}: {}".format(prefix, msg))]
+
+
+async def _build_state_twin(name, pool_ref, arguments, t0):
+    """BuildStateTwin dispatch (SPEC 1.3): read chain once via LiveProvider,
+    serialize the snapshot to the wire form, return it. No twin build, no
+    primitive — all four pool types are valid. Mirrors the reactive tools'
+    identity validation, chain_id guard, and rpc_url scrubbing exactly."""
+    pool_address = arguments.get("pool_address", "")
+    pool_type = arguments.get("pool_type", "")
+    rpc_url = arguments.get("rpc_url")
+
+    if not pool_address or not rpc_url or not pool_type:
+        return _err(name, pool_ref, arguments, t0, "MissingArgument",
+                    "pool_address, rpc_url, and pool_type are all required.")
+    if pool_type not in POOL_TYPES:
+        return _err(name, pool_ref, arguments, t0, "BadPoolType",
+                    "pool_type {!r} must be one of {}.".format(
+                        pool_type, list(POOL_TYPES)))
+
+    declared_chain_id = arguments.get("chain_id")
+    block_number = arguments.get("block_number")
+
+    # Pass-through kwargs per LiveProvider.snapshot's contract: block_number
+    # (all types) and lwr_tick/upr_tick (uniswap_v3 only — the other read
+    # paths never read them, so they are simply not forwarded elsewhere).
+    snap_kwargs = {}
+    if block_number is not None:
+        snap_kwargs["block_number"] = block_number
+    if pool_type == "uniswap_v3":
+        for tick in ("lwr_tick", "upr_tick"):
+            if arguments.get(tick) is not None:
+                snap_kwargs[tick] = arguments[tick]
+
+    try:
+        provider = _make_provider(rpc_url)
+        snap = provider.snapshot(
+            "{}:{}".format(pool_type, pool_address), **snap_kwargs)
+    except Exception as e:
+        return _err(name, pool_ref, arguments, t0, type(e).__name__,
+                    _scrub_secrets("Failed to read pool state: {}".format(e),
+                                   rpc_url),
+                    prefix="Error reading pool")
+
+    # chain_id guard — catches an RPC pointed at the wrong chain.
+    snap_chain_id = getattr(snap, "chain_id", None)
+    if (declared_chain_id is not None and snap_chain_id is not None
+            and int(declared_chain_id) != int(snap_chain_id)):
+        return _err(name, pool_ref, arguments, t0, "ChainMismatch",
+                    "declared chain_id {} but the RPC reports {}.".format(
+                        declared_chain_id, snap_chain_id))
+
+    try:
+        twin = _serialize_state_twin(snap)
+    except Exception as e:
+        return _err(name, pool_ref, arguments, t0, type(e).__name__,
+                    _scrub_secrets("Failed to serialize twin: {}".format(e),
+                                   rpc_url),
+                    prefix="Error serializing twin")
+
+    _log_receipt(name, pool_ref, arguments, "ok",
+                 (time.monotonic() - t0) * 1000,
+                 result_summary="type={}, hash={}".format(
+                     twin["__type__"], twin["content_hash"][:12]))
+    return [TextContent(type="text",
+                        text=json.dumps(twin, indent=2, default=str))]
 
 
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -548,6 +733,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     pool_address = arguments.get("pool_address", "")
     pool_type = arguments.get("pool_type", "")
     pool_ref = "{}:{}".format(pool_type or "?", pool_address or "?")
+
+    # BuildStateTwin (SPEC 1.3): the one non-primitive, chain-touching tool.
+    # Dispatched on its own path — reads chain once and returns the serialized
+    # snapshot for client-side rehydration (no twin build, no primitive, all
+    # four pool types valid).
+    if name == BUILD_TWIN_TOOL:
+        return await _build_state_twin(name, pool_ref, arguments, t0)
 
     # Unknown / unsupported tool.
     if name not in TOOL_NAMES or name not in TOOL_REGISTRY:
@@ -725,7 +917,7 @@ def build_server() -> Server:
         return [
             Tool(name=s["name"], description=s["description"],
                  inputSchema=s["inputSchema"])
-            for s in _wrap_schemas_with_pool_identity()
+            for s in _all_tool_schemas()
         ]
 
     @server.call_tool()
@@ -764,7 +956,8 @@ def create_app():
 
     async def health(_request):
         return JSONResponse({"status": "ok",
-                             "tools": [_public_name(n) for n in TOOL_NAMES]})
+                             "tools": [_public_name(n) for n in TOOL_NAMES]
+                                      + [BUILD_TWIN_TOOL]})
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
