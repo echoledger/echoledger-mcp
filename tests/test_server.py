@@ -551,6 +551,158 @@ def test_unsupported_pool_type_rejected_per_tool(patch_provider, tool_name,
     assert fake.calls == []  # gated before the provider was ever called
 
 
+# ─── SPEC 1.2: vectorized scenario inputs ────────────────────────────────────
+# Scenario-shaped tools accept an array alongside their scalar: one twin build,
+# one result per entry, returned in input order. The scalar stays accepted
+# (back-compat); supplying both is rejected; over-length fails fast (no RPC).
+
+# (public tool, snap factory, pool_type, pool_addr, scalar, vector, scalar_val,
+#  vec_vals, extra primitive args)
+_VECTOR_CASES = [
+    ("SimulatePriceMove", _v2_snap, "uniswap_v2", USDC_WETH_V2,
+     "price_change_pct", "price_change_pcts", -0.30, [-0.30, -0.10, 0.20],
+     {"position_size_lp": 100.0}),
+    ("CalculateSlippage", _v2_snap, "uniswap_v2", USDC_WETH_V2,
+     "amount_in", "amounts_in", 1000.0, [1000.0, 5000.0, 10_000.0],
+     {"token_in_name": "USDC"}),
+    ("SimulateBalancerMove", _balancer_snap, "balancer", ETH_DAI_BALANCER,
+     "price_change_pct", "price_change_pcts", -0.30, [-0.30, -0.10, 0.20],
+     {"lp_init_amt": 10.0}),
+    ("SimulateStableswapMove", _stableswap_snap, "stableswap",
+     USDC_DAI_STABLESWAP, "price_change_pct", "price_change_pcts",
+     -0.02, [-0.02, -0.01, 0.01], {"lp_init_amt": 100.0}),
+]
+_VECTOR_IDS = [c[0] for c in _VECTOR_CASES]
+
+
+def _vector_base(pool_type, pool_addr):
+    return {"pool_address": pool_addr, "rpc_url": "http://fake",
+            "pool_type": pool_type}
+
+
+def test_vector_schema_shape():
+    schemas = {s["name"]: s for s in server._wrap_schemas_with_pool_identity()}
+    for (tool, _snap, _pt, _addr, scalar, vector, *_rest) in _VECTOR_CASES:
+        sch = schemas[tool]["inputSchema"]
+        prop = sch["properties"][vector]
+        assert prop["type"] == "array"
+        assert prop["items"]["type"] == "number"
+        assert prop["maxItems"] == server._MAX_VECTOR_LEN
+        # Scalar still advertised, but no longer required (either/or now).
+        assert scalar in sch["properties"]
+        assert scalar not in sch["required"], tool
+    # AssessDepegRisk's depeg_levels stays array-exposed (native vector input).
+    adr = schemas["AssessDepegRisk"]["inputSchema"]["properties"]["depeg_levels"]
+    assert "array" in adr["type"]
+
+
+@pytest.mark.parametrize(
+    "tool,snap_fn,pool_type,pool_addr,scalar,vector,scalar_val,vec_vals,extra",
+    _VECTOR_CASES, ids=_VECTOR_IDS)
+def test_vector_scalar_single_multi(patch_provider, tool, snap_fn, pool_type,
+                                    pool_addr, scalar, vector, scalar_val,
+                                    vec_vals, extra):
+    base = _vector_base(pool_type, pool_addr)
+
+    # Scalar (back-compat): a single result OBJECT, not an array.
+    patch_provider(snap_fn())
+    scalar_out = json.loads(_text(_call(
+        tool, {**base, scalar: scalar_val, **extra})))
+    assert isinstance(scalar_out, dict)
+
+    # Single-element vector: an array of length 1 whose only entry equals the
+    # scalar result for the same value (same primitive, same state).
+    patch_provider(snap_fn())
+    single_out = json.loads(_text(_call(
+        tool, {**base, vector: [scalar_val], **extra})))
+    assert isinstance(single_out, list) and len(single_out) == 1
+    assert single_out[0] == scalar_out
+
+    # Multi-element vector: an ordered array, one result per input.
+    fake = patch_provider(snap_fn())
+    multi_out = json.loads(_text(_call(
+        tool, {**base, vector: vec_vals, **extra})))
+    assert isinstance(multi_out, list)
+    assert len(multi_out) == len(vec_vals)
+    # Twin built exactly once regardless of vector length (one RPC read).
+    assert len(fake.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "tool,snap_fn,pool_type,pool_addr,scalar,vector,scalar_val,vec_vals,extra",
+    _VECTOR_CASES, ids=_VECTOR_IDS)
+def test_vector_order_preserved(patch_provider, tool, snap_fn, pool_type,
+                                pool_addr, scalar, vector, scalar_val,
+                                vec_vals, extra):
+    # The i-th array entry must equal the scalar result computed for vec_vals[i].
+    base = _vector_base(pool_type, pool_addr)
+    patch_provider(snap_fn())
+    multi = json.loads(_text(_call(tool, {**base, vector: vec_vals, **extra})))
+    for i, v in enumerate(vec_vals):
+        patch_provider(snap_fn())
+        one = json.loads(_text(_call(tool, {**base, scalar: v, **extra})))
+        assert multi[i] == one, "{}: entry {} out of order".format(tool, i)
+
+
+def test_vector_both_supplied_rejected(patch_provider):
+    fake = patch_provider(_v2_snap())
+    out = _text(_call("SimulatePriceMove", {
+        **_vector_base("uniswap_v2", USDC_WETH_V2),
+        "price_change_pct": -0.1, "price_change_pcts": [-0.1, -0.2],
+        "position_size_lp": 100.0}))
+    assert "not both" in out
+    assert fake.calls == []  # rejected before any chain read
+
+
+def test_vector_neither_supplied_rejected(patch_provider):
+    fake = patch_provider(_v2_snap())
+    out = _text(_call("SimulatePriceMove", {
+        **_vector_base("uniswap_v2", USDC_WETH_V2), "position_size_lp": 100.0}))
+    assert "either" in out.lower()
+    assert fake.calls == []
+
+
+def test_vector_over_length_rejected_pre_rpc(patch_provider):
+    # Over-length must fail fast with a clear error, not a timeout / no RPC.
+    fake = patch_provider(_v2_snap())
+    too_many = [0.0] * (server._MAX_VECTOR_LEN + 1)
+    out = _text(_call("SimulatePriceMove", {
+        **_vector_base("uniswap_v2", USDC_WETH_V2),
+        "price_change_pcts": too_many, "position_size_lp": 100.0}))
+    assert str(server._MAX_VECTOR_LEN) in out
+    assert fake.calls == []
+
+
+def test_vector_empty_and_nonnumeric_rejected(patch_provider):
+    base = _vector_base("uniswap_v2", USDC_WETH_V2)
+    fake = patch_provider(_v2_snap())
+    empty = _text(_call("SimulatePriceMove", {
+        **base, "price_change_pcts": [], "position_size_lp": 100.0}))
+    assert "empty" in empty.lower()
+    bad = _text(_call("SimulatePriceMove", {
+        **base, "price_change_pcts": [0.1, "oops"], "position_size_lp": 100.0}))
+    assert "number" in bad.lower()
+    assert fake.calls == []  # both rejected pre-RPC
+
+
+def test_max_vector_len_is_a_few_hundred():
+    # Sanity on the cap: bounded but generous (SPEC 1.2 "a few hundred").
+    assert 100 <= server._MAX_VECTOR_LEN <= 1000
+
+
+def test_vector_v3_with_tick_defaults(patch_provider):
+    # V3 + vector: dispatch defaults lwr/upr ticks once (full range, shared
+    # across the sweep), then loops the scenario. One build, ordered array.
+    fake = patch_provider(_v3_snap())
+    out = json.loads(_text(_call("SimulatePriceMove", {
+        "pool_address": USDC_WETH_V3, "rpc_url": "http://fake",
+        "pool_type": "uniswap_v3",
+        "price_change_pcts": [-0.20, 0.0, 0.30], "position_size_lp": 100.0})))
+    assert isinstance(out, list) and len(out) == 3
+    assert len(fake.calls) == 1                      # twin built once
+    assert out[1]["new_price_ratio"] == pytest.approx(1.0)  # the 0.0 scenario
+
+
 # ─── Error paths ────────────────────────────────────────────────────────────
 
 

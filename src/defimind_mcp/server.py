@@ -165,6 +165,29 @@ _TOKEN_ARG_RENAMES = {
 # Renamed token args that are required of the LLM (vs. dispatch-defaulted).
 _REQUIRED_TOKEN_ARGS = frozenset({"CalculateSlippage"})
 
+# ─── Vectorized scenario inputs (SPEC 1.2) ───────────────────────────────────
+# Scenario-shaped tools accept an array alongside their scalar input so a
+# caller can sweep a whole grid/curve in ONE call: the twin is built once and
+# the primitive loops over the vector, returning an array of results aligned
+# to input order. Maps registry name → (scalar_param, vector_param). The
+# scalar stays accepted (back-compat); supplying BOTH is a clean error.
+#
+# AssessDepegRisk is intentionally absent: its depeg_levels[] is a native
+# multi-level input on the primitive itself (one result holding N scenarios),
+# not a dispatch-side per-call loop — it is already vector-shaped upstream and
+# stays exposed as an array via the registry schema.
+_VECTOR_PARAMS = {
+    "SimulatePriceMove":           ("price_change_pct", "price_change_pcts"),
+    "SimulateBalancerPriceMove":   ("price_change_pct", "price_change_pcts"),
+    "SimulateStableswapPriceMove": ("price_change_pct", "price_change_pcts"),
+    "CalculateSlippage":           ("amount_in", "amounts_in"),
+}
+
+# Upper bound on a single vector sweep. The twin is built once, but each entry
+# still runs the primitive — cap the fan-out so one call stays bounded and an
+# oversized batch fails fast (pre-RPC) instead of timing out.
+_MAX_VECTOR_LEN = 256
+
 # Public tool-name aliases. Some clients (notably claude.ai connectors)
 # namespace each remote tool with a prefix, then validate the COMBINED name
 # against ^[a-zA-Z0-9_-]{1,64}$. DeFiPy's verbose Balancer/Stableswap
@@ -292,6 +315,29 @@ def _wrap_schemas_with_pool_identity() -> list[dict]:
             props[schema_name] = {"type": "string", "description": desc}
             if tool_name in _REQUIRED_TOKEN_ARGS and schema_name not in required:
                 required.append(schema_name)
+
+        # SPEC 1.2: scenario-shaped tools also accept a vector alongside their
+        # scalar, to sweep a grid/curve in one call. Advertise the array
+        # input and drop the scalar from `required` — the caller supplies
+        # exactly one of (scalar, vector), which dispatch enforces. The scalar
+        # property itself stays in place (back-compat).
+        if tool_name in _VECTOR_PARAMS:
+            scalar_name, vector_name = _VECTOR_PARAMS[tool_name]
+            props[vector_name] = {
+                "type": "array",
+                "items": {"type": "number"},
+                "maxItems": _MAX_VECTOR_LEN,
+                "description": (
+                    "Optional batch form of '{0}': an array of values to "
+                    "evaluate in a single call. The pool is read once and the "
+                    "result is an array with one entry per element, in input "
+                    "order. Supply EITHER '{0}' (single) OR '{1}' (batch), not "
+                    "both. Max {2} entries.".format(
+                        scalar_name, vector_name, _MAX_VECTOR_LEN)
+                ),
+            }
+            if scalar_name in required:
+                required.remove(scalar_name)
 
         # Expose the short public name; the registry name stays canonical
         # for all internal lookups (keeps namespaced names within 64 chars).
@@ -474,6 +520,13 @@ def _serialize_result(result) -> str:
     return json.dumps(payload, indent=2, default=str)
 
 
+def _serialize_results(results) -> str:
+    """Serialize a vector sweep (SPEC 1.2) as a JSON array aligned to input
+    order — one serialized result per scenario."""
+    payload = [asdict(r) if is_dataclass(r) else r for r in results]
+    return json.dumps(payload, indent=2, default=str)
+
+
 # ─── Core dispatch ───────────────────────────────────────────────────────────
 
 
@@ -520,6 +573,43 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     "Tool {!r} is not compatible with pool_type {!r}. "
                     "Compatible pool types: {}.".format(
                         name, pool_type, sorted(compatible)))
+
+    # SPEC 1.2 vector sweep: detect + validate the batch input BEFORE any
+    # chain read, so a malformed batch (both forms, neither form, empty,
+    # over-length, non-numeric) fails fast without an RPC. The loop itself
+    # runs after the twin is built (once).
+    vector_values = None
+    vector_name = None
+    if name in _VECTOR_PARAMS:
+        scalar_name, vec_name = _VECTOR_PARAMS[name]
+        has_scalar = arguments.get(scalar_name) is not None
+        has_vector = arguments.get(vec_name) is not None
+        if has_scalar and has_vector:
+            return _err(name, pool_ref, arguments, t0, "AmbiguousScenarioInput",
+                        "Supply either {!r} (single) or {!r} (batch), not "
+                        "both.".format(scalar_name, vec_name))
+        if not has_scalar and not has_vector:
+            return _err(name, pool_ref, arguments, t0, "MissingArgument",
+                        "Provide either {!r} (single) or {!r} (batch).".format(
+                            scalar_name, vec_name))
+        if has_vector:
+            vec = arguments[vec_name]
+            if not isinstance(vec, list):
+                return _err(name, pool_ref, arguments, t0, "BadVectorInput",
+                            "{!r} must be an array of numbers.".format(vec_name))
+            if len(vec) == 0:
+                return _err(name, pool_ref, arguments, t0, "BadVectorInput",
+                            "{!r} must not be empty.".format(vec_name))
+            if len(vec) > _MAX_VECTOR_LEN:
+                return _err(name, pool_ref, arguments, t0, "VectorTooLong",
+                            "{!r} has {} entries; the max is {}.".format(
+                                vec_name, len(vec), _MAX_VECTOR_LEN))
+            if not all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                       for x in vec):
+                return _err(name, pool_ref, arguments, t0, "BadVectorInput",
+                            "{!r} must contain only numbers.".format(vec_name))
+            vector_values = vec
+            vector_name = vec_name
 
     declared_chain_id = arguments.get("chain_id")
     block_number = arguments.get("block_number")
@@ -590,17 +680,37 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if tick in sig and primitive_args.get(tick) is None:
                 primitive_args[tick] = getattr(snap, tick, None)
 
-    # Invoke the primitive.
+    # Invoke the primitive. The twin is already built (once); a scalar call
+    # runs it once, a vector sweep (SPEC 1.2) runs it once per scenario over
+    # the SAME twin — the scenario primitives are read-only, so each entry is
+    # computed independently from the current state, no rebuild needed.
     try:
-        result = TOOL_REGISTRY[name].primitive_cls().apply(lp, **primitive_args)
+        primitive = TOOL_REGISTRY[name].primitive_cls()
+        if vector_values is not None:
+            scalar_name = _VECTOR_PARAMS[name][0]
+            primitive_args.pop(vector_name, None)  # the array isn't a kwarg
+            results = [
+                primitive.apply(lp, **{**primitive_args, scalar_name: v})
+                for v in vector_values
+            ]
+        else:
+            results = [primitive.apply(lp, **primitive_args)]
     except Exception as e:
         return _err(name, pool_ref, arguments, t0, type(e).__name__,
                     _scrub_secrets(str(e), rpc_url))
 
+    # A vector call returns a JSON array aligned to input order; a scalar call
+    # returns the single result object unchanged (back-compat).
+    if vector_values is not None:
+        summary = "vector[{}] first: {}".format(
+            len(results), _summarize(name, results[0]))
+        text = _serialize_results(results)
+    else:
+        summary = _summarize(name, results[0])
+        text = _serialize_result(results[0])
     _log_receipt(name, pool_ref, arguments, "ok",
-                 (time.monotonic() - t0) * 1000,
-                 result_summary=_summarize(name, result))
-    return [TextContent(type="text", text=_serialize_result(result))]
+                 (time.monotonic() - t0) * 1000, result_summary=summary)
+    return [TextContent(type="text", text=text)]
 
 
 # ─── Server init ─────────────────────────────────────────────────────────────
