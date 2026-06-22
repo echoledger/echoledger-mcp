@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "defimind-mcp"
-version = "0.2.1"
+version = "0.2.2"
 description = "DeFiMind MCP — live LP analytics (Uniswap V2/V3, Balancer, Curve stableswap) over the Model Context Protocol, powered by open-source DeFiPy."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,3 +41,10 @@ Paper = "https://arxiv.org/abs/2605.11522"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# src-layout: put `src` on sys.path so a bare `pytest` can import
+# defimind_mcp without an editable install (otherwise collection fails
+# with ModuleNotFoundError: No module named 'defimind_mcp').
+pythonpath = ["src"]
+testpaths = ["tests"]

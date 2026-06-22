@@ -5,4 +5,4 @@ pools (lifted from defipy's stdio MCP server and ported to streamable
 HTTP). v0.2 added the 5 Balancer/Stableswap tools.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"

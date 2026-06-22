@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/defimind-ai/defimind-mcp"
 url: "https://defimind.ai"
 license: Apache-2.0
-version: 0.2.1
+version: 0.2.2
 # doi: 10.5281/zenodo.XXXXXXX   # filled in Phase 5
 references:
   - type: article
