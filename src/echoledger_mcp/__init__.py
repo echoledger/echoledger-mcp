@@ -1,4 +1,4 @@
-"""DeFiMind MCP — live LP analytics over the Model Context Protocol.
+"""EchoLedger MCP — live LP analytics over the Model Context Protocol.
 
 Eleven tools over Uniswap V2/V3, Balancer weighted, and Curve stableswap
 pools (lifted from defipy's stdio MCP server and ported to streamable

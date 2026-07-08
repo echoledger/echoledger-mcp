@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ─────────────────────────────────────────────────────────────────────────────
-# DeFiMind MCP — container image (Phase 2)
+# EchoLedger MCP — container image (Phase 2)
 #
 # Multi-stage: a builder stage with the native toolchain + GMP/MPFR/MPC
 # headers (gmpy2 is a hard transitive dep of defipy and the most likely
@@ -65,4 +65,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/health').read()" || exit 1
 
 # Serve streamable HTTP on $PORT (MCP endpoint at /mcp).
-CMD ["python", "-m", "defimind_mcp.server"]
+CMD ["python", "-m", "echoledger_mcp.server"]

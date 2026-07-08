@@ -1,6 +1,6 @@
-# defimind-mcp
+# echoledger-mcp
 
-DeFiMind's MCP server. Analyze **live** Uniswap V2/V3, Balancer, and
+EchoLedger's MCP server. Analyze **live** Uniswap V2/V3, Balancer, and
 Curve stableswap pools — positions, price moves, pool health, rug
 signals, slippage, and depeg risk — or build a portable **State Twin**
 for off-MCP analysis, from any MCP-compatible AI client. Reads real chain
@@ -10,27 +10,27 @@ state via a caller-supplied RPC; the endpoint itself is authless.
 [![MCP](https://img.shields.io/badge/MCP-streamable--http-6ea8ff)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776ab)](https://www.python.org)
 [![arXiv](https://img.shields.io/badge/arXiv-2605.11522-b31b1b.svg)](https://arxiv.org/abs/2605.11522)
-[![smithery badge](https://smithery.ai/badge/ic3moore/defimind)](https://smithery.ai/servers/ic3moore/defimind)
+[![smithery badge](https://smithery.ai/badge/ic3moore/echoledger)](https://smithery.ai/servers/ic3moore/echoledger)
 
-Endpoint: **`https://mcp.defimind.ai/mcp`** (streamable-HTTP, authless).
+Endpoint: **`https://mcp.echoledger.ai/mcp`** (streamable-HTTP, authless).
 
 ## Install
 
 ### Claude Desktop
 Settings → Integrations → Add server.
-URL: `https://mcp.defimind.ai/mcp`
+URL: `https://mcp.echoledger.ai/mcp`
 
 ### Claude Code
 ```bash
-claude mcp add --transport http defimind https://mcp.defimind.ai/mcp
+claude mcp add --transport http echoledger https://mcp.echoledger.ai/mcp
 ```
 
 ### Cursor
 Settings → MCP → Add new MCP server.
-Name: `defimind` · Type: `http` · URL: `https://mcp.defimind.ai/mcp`
+Name: `echoledger` · Type: `http` · URL: `https://mcp.echoledger.ai/mcp`
 
 ### Smithery
-Listed at [smithery.ai/servers/ic3moore/defimind](https://smithery.ai/servers/ic3moore/defimind) — connect via the Smithery gateway from any supported client.
+Listed at [smithery.ai/servers/ic3moore/echoledger](https://smithery.ai/servers/ic3moore/echoledger) — connect via the Smithery gateway from any supported client.
 
 ## Tools
 
@@ -129,7 +129,7 @@ as JSON (`__type__` + fields + a `content_hash`). A client rehydrates it
 locally and runs unlimited counterfactuals (price moves, IL, slippage)
 **off the MCP, with zero further RPC** — build once, run N. Spans all four
 pool types. See the twin round-trip in [`docs/TOOLS.md`](docs/TOOLS.md) and
-the [`defimind` package](https://github.com/defimind-ai/defimind).
+the [`echoledger` package](https://github.com/echoledger-ai/echoledger).
 
 > "Build me a reusable twin of the USDC/ETH 0.05% pool."
 
@@ -138,7 +138,7 @@ metrics stay server-side reads inside `CheckPoolHealth`/`DetectRugSignals`.)*
 
 ## How it works
 
-`defimind-mcp` reads **live** Uniswap V2/V3, Balancer, and Curve
+`echoledger-mcp` reads **live** Uniswap V2/V3, Balancer, and Curve
 stableswap pool state through a caller-supplied RPC endpoint (BYO-RPC,
 passed per tool call). The endpoint is **authless** — no API key, no
 account. Nothing is logged or stored; each call pulls state, runs the
@@ -172,13 +172,13 @@ pip install -e ".[dev]"
 
 Run the server over streamable HTTP (binds to `$PORT`, default 8080):
 ```bash
-PORT=8080 python -m defimind_mcp.server      # endpoint at http://localhost:8080/mcp
+PORT=8080 python -m echoledger_mcp.server      # endpoint at http://localhost:8080/mcp
 ```
 
 Or over stdio for a local MCP Inspector smoke-test:
 ```bash
-python -m defimind_mcp.server --stdio
-npx @modelcontextprotocol/inspector python -m defimind_mcp.server --stdio
+python -m echoledger_mcp.server --stdio
+npx @modelcontextprotocol/inspector python -m echoledger_mcp.server --stdio
 ```
 
 Tests (offline — fake provider + real twin/primitives):
@@ -189,7 +189,7 @@ pytest tests/
 Live-RPC gate (real mainnet Uniswap V2/V3, Balancer, and Curve pools;
 needs your own RPC):
 ```bash
-DEFIMIND_TEST_RPC_URL="https://eth-mainnet.example/v2/<key>" pytest tests/test_live.py -v
+ECHOLEDGER_TEST_RPC_URL="https://eth-mainnet.example/v2/<key>" pytest tests/test_live.py -v
 ```
 
 ## License
@@ -201,5 +201,5 @@ This project adapts code from [DeFiPy](https://defipy.org) (Apache-2.0).
 ## See also
 
 - DeFiPy (open-source substrate): https://defipy.org
-- DeFiMind: https://defimind.ai
+- EchoLedger: https://echoledger.ai
 - State Twins paper: https://arxiv.org/abs/2605.11522

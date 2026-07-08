@@ -1,7 +1,7 @@
-# defimind-mcp v0.2 — Expand the live tool surface 5 → 10
+# echoledger-mcp v0.2 — Expand the live tool surface 5 → 10
 
 *Hand-off spec for Claude Code. Adds the 5 Balancer/Stableswap tools to the live
-`defimind-mcp` endpoint, taking it from 5 live tools to the full 10-tool curated
+`echoledger-mcp` endpoint, taking it from 5 live tools to the full 10-tool curated
 DeFiPy registry. Unblocked by **DeFiPy v2.2** (2026-06-18), which shipped the
 Balancer & Stableswap LiveProviders the existing server was explicitly waiting on.*
 
@@ -11,7 +11,7 @@ Balancer & Stableswap LiveProviders the existing server was explicitly waiting o
 
 ## Why now (the unlock)
 
-The live server (`src/defimind_mcp/server.py`) serves **5 tools** — exactly the
+The live server (`src/echoledger_mcp/server.py`) serves **5 tools** — exactly the
 V2/V3-LiveProvider-compatible subset of DeFiPy's 10-tool registry. Its own comment
 states the reason and the trigger:
 
@@ -124,7 +124,7 @@ each snapshot + build a twin cleanly; working pool addresses recorded for Phase 
 
 ## Phase 1 — Wire the 5 tools into dispatch
 
-All changes are in `src/defimind_mcp/server.py`, extending the existing patterns.
+All changes are in `src/echoledger_mcp/server.py`, extending the existing patterns.
 **The V2/V3 path must remain byte-for-byte behaviorally unchanged** — this is purely
 additive.
 
@@ -231,7 +231,7 @@ additive.
    structure. At minimum: `AnalyzeBalancerPosition` (or `SimulateBalancerPriceMove`)
    on the real Balancer pool, and `AssessDepegRisk` (or `AnalyzeStableswapPosition`)
    on the real Stableswap pool, asserting a sane non-null field. Keep them behind the
-   `DEFIMIND_TEST_RPC_URL` skip gate.
+   `ECHOLEDGER_TEST_RPC_URL` skip gate.
 
 **Docs / listings — update every place the "5 tools" / "V2/V3" claim appears:**
 3. **`README.md`** — the "## Tools" section ("v0.1 ships **5 tools** over Uniswap
@@ -250,10 +250,10 @@ additive.
 
 **Version + deploy:**
 7. Bump `version` in `pyproject.toml` `0.1.0 → 0.2.0` (and `server.py`'s
-   `Server("defimind", version="0.1.0")` → `0.2.0`, and anywhere else the version
+   `Server("echoledger", version="0.1.0")` → `0.2.0`, and anywhere else the version
    string lives — grep for `0.1.0`).
-8. Redeploy to Railway (the `sunny-recreation` project / `mcp.defimind.ai`).
-9. **Post-deploy verification:** `curl https://mcp.defimind.ai/health` → `tools` array
+8. Redeploy to Railway (the `sunny-recreation` project / `mcp.echoledger.ai`).
+9. **Post-deploy verification:** `curl https://mcp.echoledger.ai/health` → `tools` array
    has all 10. Then a real MCP client call to one Balancer tool and one Stableswap
    tool against real pools (with a real RPC) returns a sane result.
 
@@ -275,10 +275,10 @@ registries the endpoint was originally listed on. Mirrors the original distribut
 procedure (`operating-notes/mcp-spec-docs/PHASE_4_DISTRIBUTION.md`) — re-run, not
 first-run, so most of it is editing an existing entry rather than creating one.
 
-**Preconditions:** Phase 2 gate met — the deployed `mcp.defimind.ai` serves 10 tools
+**Preconditions:** Phase 2 gate met — the deployed `mcp.echoledger.ai` serves 10 tools
 (`curl /health` confirms), and `server.json` in the repo is updated (version `0.2.0`,
 description covering V2/V3 + Balancer + Curve, `remotes[0].url` =
-`https://mcp.defimind.ai/mcp`).
+`https://mcp.echoledger.ai/mcp`).
 
 ### Tier 1 — Official MCP registry (`registry.modelcontextprotocol.io`)
 
@@ -293,27 +293,27 @@ first (Phase 2), then:
      scenarios, pool health, rug signals, slippage, depeg risk. Bring your own RPC."*
      Keep it ~100 chars / front-door voice / credits defipy openly / honors the
      claims-to-avoid list (no "first"/"only"/bare "unique").
-   - `remotes[0].url` stays `https://mcp.defimind.ai/mcp` (already migrated).
+   - `remotes[0].url` stays `https://mcp.echoledger.ai/mcp` (already migrated).
    - No `packages` block (remote-listed; ownership via the GitHub-org namespace).
 2. **Publish via `mcp-publisher`** (the documented original path):
    - Install/locate the `mcp-publisher` CLI.
-   - `mcp-publisher login github` — authenticate as the **defimind-ai** org so the
-     `io.github.defimind-ai/*` namespace is authorized.
+   - `mcp-publisher login github` — authenticate as the **echoledger-ai** org so the
+     `io.github.echoledger-ai/*` namespace is authorized.
    - `mcp-publisher publish` from the repo root. The registry is preview /
      high-traffic — retry on transient failures.
 3. **Verify:**
    ```bash
-   curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.defimind-ai/defimind-mcp"
+   curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.echoledger-ai/echoledger-mcp"
    ```
    Returns the updated metadata: `version` `0.2.0`, new description.
 
-### Tier 2 — Smithery (`smithery.ai/servers/ic3moore/defimind`)
+### Tier 2 — Smithery (`smithery.ai/servers/ic3moore/echoledger`)
 
 Smithery holds its **own ingested copy** of the server surface; updating
 `smithery.yaml` in the repo is necessary but not sufficient — Smithery must re-ingest.
 
 4. **Confirm `smithery.yaml`** reflects the 10-tool surface (updated in Phase 2).
-5. **Trigger a Smithery re-scan / re-deploy** of `ic3moore/defimind` so it picks up
+5. **Trigger a Smithery re-scan / re-deploy** of `ic3moore/echoledger` so it picks up
    the new tool list. (Via the Smithery dashboard for the listing, or a redeploy
    trigger — confirm the mechanism in the dashboard; Smithery re-reads on redeploy.)
 6. **Update the Smithery listing description** (marketing copy — a web action in the

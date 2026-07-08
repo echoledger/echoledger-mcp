@@ -1,7 +1,7 @@
 """Live-RPC gate tests — the real-chain half of the gate.
 
-Skipped unless DEFIMIND_TEST_RPC_URL is set to an Ethereum-mainnet RPC.
-Run:  DEFIMIND_TEST_RPC_URL="https://eth-mainnet.../v2/<key>" \\
+Skipped unless ECHOLEDGER_TEST_RPC_URL is set to an Ethereum-mainnet RPC.
+Run:  ECHOLEDGER_TEST_RPC_URL="https://eth-mainnet.../v2/<key>" \\
           .venv/bin/pytest tests/test_live.py -v
 
 Exercises the dispatch path against real mainnet pools through the real
@@ -21,11 +21,11 @@ import os
 
 import pytest
 
-from defimind_mcp import server
+from echoledger_mcp import server
 
-RPC = os.environ.get("DEFIMIND_TEST_RPC_URL")
+RPC = os.environ.get("ECHOLEDGER_TEST_RPC_URL")
 pytestmark = pytest.mark.skipif(
-    not RPC, reason="set DEFIMIND_TEST_RPC_URL to run live-RPC gate tests")
+    not RPC, reason="set ECHOLEDGER_TEST_RPC_URL to run live-RPC gate tests")
 
 USDC_WETH_V2 = "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
 USDC_WETH_V3 = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"

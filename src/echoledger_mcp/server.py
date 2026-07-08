@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Apache 2.0 License (DeFiMind MCP)
+# Apache 2.0 License (EchoLedger MCP)
 # ─────────────────────────────────────────────────────────────────────────────
-# Copyright 2026 Ian Moore / DeFiMind Inc.
+# Copyright 2026 Ian Moore / EchoLedger Inc.
 #
 # Adapted from DeFiPy's stdio MCP server (python/mcp/defipy_mcp_server.py),
 # Copyright 2023–2026 Ian Moore, Apache-2.0. See NOTICE.
@@ -18,7 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DeFiMind MCP server — 11 live tools over HTTP (10 LP analytics + BuildStateTwin).
+"""EchoLedger MCP server — 11 live tools over HTTP (10 LP analytics + BuildStateTwin).
 
 Covers Uniswap V2/V3, Balancer V2 weighted (2-asset), and Curve plain
 Stableswap (2-asset) pools. The 10 reactive tools each read chain, build
@@ -910,7 +910,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def build_server() -> Server:
     """Configure the low-level MCP server with list_tools + call_tool."""
-    server = Server("defimind", version="0.2.3")
+    server = Server("echoledger", version="0.2.3")
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:

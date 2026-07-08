@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-title: "DeFiMind MCP"
+title: "EchoLedger MCP"
 message: "If you use this software, please cite it and the State Twins paper below."
 type: software
 authors:
   - family-names: Moore
     given-names: Ian C.
-repository-code: "https://github.com/defimind-ai/defimind-mcp"
-url: "https://defimind.ai"
+repository-code: "https://github.com/echoledger-ai/echoledger-mcp"
+url: "https://echoledger.ai"
 license: Apache-2.0
 version: 0.2.3
 # doi: 10.5281/zenodo.XXXXXXX   # filled in Phase 5

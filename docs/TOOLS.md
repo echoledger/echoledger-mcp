@@ -1,6 +1,6 @@
-# DeFiMind MCP — tool reference (11 tools)
+# EchoLedger MCP — tool reference (11 tools)
 
-The hosted endpoint (`https://mcp.defimind.ai/mcp`) exposes **11 tools** over
+The hosted endpoint (`https://mcp.echoledger.ai/mcp`) exposes **11 tools** over
 live Uniswap V2/V3, Balancer V2 weighted (2-asset), and Curve plain Stableswap
 (2-asset) pools. This is the complete, verified reference for the shipped
 surface. Examples are captured from the real handlers.
@@ -17,7 +17,7 @@ The toolkit has two consumer models:
   State Twin* (the pool's state as JSON). A client rehydrates it locally and
   runs unlimited counterfactuals **off the MCP, with zero further RPC**. See
   [the twin round-trip](#buildstatetwin) and the
-  [`defimind` package guide](https://github.com/defimind-ai/defimind).
+  [`echoledger` package guide](https://github.com/echoledger-ai/echoledger).
 
 ## Common input — pool identity
 
@@ -295,7 +295,7 @@ over the snapshot body **before** the `__type__`/`content_hash` keys are added
 ### The twin round-trip (build once, run N, zero RPC)
 
 ```python
-from defimind.client import build, sweep, verify_content_hash      # pip install defimind[twin]
+from echoledger.client import build, sweep, verify_content_hash      # pip install echoledger[twin]
 from defipy.primitives.position import SimulatePriceMove
 
 wire = ...                              # the BuildStateTwin JSON above
@@ -307,8 +307,8 @@ results = sweep(SimulatePriceMove(), exchange, "price_change_pct",
 ```
 
 The same twin can be built **BYO-RPC** with no hosted call —
-`defimind.client.build_from_rpc("uniswap_v3:0x88e6…", rpc_url)`. See the
-[`defimind` package guide](https://github.com/defimind-ai/defimind).
+`echoledger.client.build_from_rpc("uniswap_v3:0x88e6…", rpc_url)`. See the
+[`echoledger` package guide](https://github.com/echoledger-ai/echoledger).
 
 > **Honest gap:** `BuildStateTwin` is a single-block **STATE** twin.
 > History-derived health metrics (swap counts, fee accrual, LP concentration)

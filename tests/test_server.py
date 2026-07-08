@@ -1,4 +1,4 @@
-"""Phase 1 tests for the DeFiMind MCP server.
+"""Phase 1 tests for the EchoLedger MCP server.
 
 Strategy: the live-RPC seam (`_make_provider`) is monkeypatched to a
 fake provider that returns hand-built V2/V3 snapshot dataclasses. The
@@ -8,7 +8,7 @@ logic is exercised end-to-end with no web3 and no network.
 
 The live-RPC gate (CheckPoolHealth + CalculateSlippage against real
 mainnet V2 and V3 pools) lives in test_live.py and is skipped unless
-DEFIMIND_TEST_RPC_URL is set.
+ECHOLEDGER_TEST_RPC_URL is set.
 """
 
 import asyncio
@@ -22,7 +22,7 @@ from defipy.twin import snapshot as snapshot_module
 from defipy.twin.snapshot import (
     V2PoolSnapshot, V3PoolSnapshot, BalancerPoolSnapshot, StableswapPoolSnapshot,
 )
-from defimind_mcp import server
+from echoledger_mcp import server
 
 
 # ─── Fake provider ──────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ def test_slippage_exposes_token_name_string():
 
 def test_build_server_registers_handlers():
     srv = server.build_server()
-    assert srv.name == "defimind"
+    assert srv.name == "echoledger"
 
 
 # ─── Dispatch (fake provider, real builder + primitives) ────────────────────
