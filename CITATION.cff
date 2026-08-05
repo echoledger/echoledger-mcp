@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: Moore
     given-names: Ian C.
-repository-code: "https://github.com/echoledger-ai/echoledger-mcp"
+repository-code: "https://github.com/echoledger/echoledger-mcp"
 url: "https://echoledger.ai"
 license: Apache-2.0
 version: 0.2.3

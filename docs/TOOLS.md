@@ -17,7 +17,7 @@ The toolkit has two consumer models:
   State Twin* (the pool's state as JSON). A client rehydrates it locally and
   runs unlimited counterfactuals **off the MCP, with zero further RPC**. See
   [the twin round-trip](#buildstatetwin) and the
-  [`echoledger` package guide](https://github.com/echoledger-ai/echoledger).
+  [`echoledger` package guide](https://github.com/echoledger/echoledger).
 
 ## Common input — pool identity
 
@@ -308,7 +308,7 @@ results = sweep(SimulatePriceMove(), exchange, "price_change_pct",
 
 The same twin can be built **BYO-RPC** with no hosted call —
 `echoledger.client.build_from_rpc("uniswap_v3:0x88e6…", rpc_url)`. See the
-[`echoledger` package guide](https://github.com/echoledger-ai/echoledger).
+[`echoledger` package guide](https://github.com/echoledger/echoledger).
 
 > **Honest gap:** `BuildStateTwin` is a single-block **STATE** twin.
 > History-derived health metrics (swap counts, fee accrual, LP concentration)

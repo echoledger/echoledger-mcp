@@ -39,7 +39,7 @@ dev = ["pytest>=8.0"]
 
 [project.urls]
 Homepage = "https://echoledger.ai"
-Repository = "https://github.com/echoledger-ai/echoledger-mcp"
+Repository = "https://github.com/echoledger/echoledger-mcp"
 Paper = "https://arxiv.org/abs/2605.11522"
 
 [tool.setuptools.packages.find]

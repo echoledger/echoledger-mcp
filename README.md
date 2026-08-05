@@ -129,7 +129,7 @@ as JSON (`__type__` + fields + a `content_hash`). A client rehydrates it
 locally and runs unlimited counterfactuals (price moves, IL, slippage)
 **off the MCP, with zero further RPC** — build once, run N. Spans all four
 pool types. See the twin round-trip in [`docs/TOOLS.md`](docs/TOOLS.md) and
-the [`echoledger` package](https://github.com/echoledger-ai/echoledger).
+the [`echoledger` package](https://github.com/echoledger/echoledger).
 
 > "Build me a reusable twin of the USDC/ETH 0.05% pool."
 

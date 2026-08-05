@@ -297,13 +297,13 @@ first (Phase 2), then:
    - No `packages` block (remote-listed; ownership via the GitHub-org namespace).
 2. **Publish via `mcp-publisher`** (the documented original path):
    - Install/locate the `mcp-publisher` CLI.
-   - `mcp-publisher login github` — authenticate as the **echoledger-ai** org so the
-     `io.github.echoledger-ai/*` namespace is authorized.
+   - `mcp-publisher login github` — authenticate as the **echoledger** org so the
+     `io.github.echoledger/*` namespace is authorized.
    - `mcp-publisher publish` from the repo root. The registry is preview /
      high-traffic — retry on transient failures.
 3. **Verify:**
    ```bash
-   curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.echoledger-ai/echoledger-mcp"
+   curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.echoledger/echoledger-mcp"
    ```
    Returns the updated metadata: `version` `0.2.0`, new description.
 
