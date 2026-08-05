@@ -24,8 +24,12 @@ dependencies = [
     # DetectRugSignals live-snapshot false-positives; 2.2.0 shipped the
     # Balancer/Stableswap LiveProviders.)
     "defipy[chain]>=2.2.2,<2.3",
-    # MCP Python SDK.
-    "mcp>=1.27.0",
+    # MCP Python SDK. Capped below 2.0 — the 2.0.0 release drops the
+    # `@server.list_tools()` decorator API this codebase's build_server()
+    # depends on (Server.list_tools no longer exists in 2.0.0), which
+    # crash-loops the container at import time. Confirmed 1.27.0-1.29.0
+    # all still expose it; re-test before lifting this cap.
+    "mcp>=1.27.0,<2.0",
     # Streamable-HTTP transport mount (final choice settled in Phase 1).
     "starlette>=0.37",
     "uvicorn>=0.30",
