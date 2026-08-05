@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.echoledger/echoledger-mcp",
+  "name": "io.github.icmoore/echoledger-mcp",
   "title": "EchoLedger",
   "description": "Live LP analytics — Uniswap V2/V3, Balancer, Curve stableswap: PnL, health, slippage, depeg risk.",
   "repository": {
