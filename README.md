@@ -1,3 +1,7 @@
+> **⚠ Decommissioned (2026-10-23).** This MCP server is no longer hosted. The public
+> endpoint `mcp.echoledger.ai` has been taken offline and its listings removed. Kept
+> for reference. Not maintained, not deployed.
+
 # echoledger-mcp
 
 EchoLedger's MCP server. Analyze **live** Uniswap V2/V3, Balancer, and

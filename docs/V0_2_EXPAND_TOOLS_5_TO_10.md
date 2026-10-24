@@ -1,3 +1,8 @@
+> **⚠ INERT — endpoint decommissioned 2026-10-23.** The hosted service
+> (`mcp.echoledger.ai`) is offline and its listings were removed. This spec, and the
+> redeploy / registry (`mcp-publisher`) / Smithery cascade it describes, is **moot unless
+> the service is deliberately revived**. Do not act on it, deploy, or publish from it.
+
 # echoledger-mcp v0.2 — Expand the live tool surface 5 → 10
 
 *Hand-off spec for Claude Code. Adds the 5 Balancer/Stableswap tools to the live

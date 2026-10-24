@@ -1,3 +1,5 @@
+> **Decommissioned 2026-10-23** — the endpoint described below is offline; kept for reference.
+
 # EchoLedger MCP — tool reference (11 tools)
 
 The hosted endpoint (`https://mcp.echoledger.ai/mcp`) exposes **11 tools** over
